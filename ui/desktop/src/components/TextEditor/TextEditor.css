@@ -1,0 +1,71 @@
+/* /Users/lindseyf/goose-repo/ui/desktop/src/components/TextEditor/TextEditor.css */
+.text-editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* Or a specific height */
+}
+
+.editor-toolbar {
+  padding: 8px;
+  border-bottom: 1px solid #ccc;
+  background-color: #f0f0f0;
+  /* Ensure toolbar stays at the top and doesn't scroll with content */
+  position: sticky;
+  top: 0; /* Adjust if there's a custom title bar area above it within this view */
+  z-index: 10;
+}
+
+.editor-toolbar button {
+  margin-right: 4px;
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  background-color: #fff;
+  display: inline-flex; /* For aligning icons nicely */
+  align-items: center; /* For aligning icons nicely */
+  gap: 4px; /* Space between icon and text if any */
+}
+
+.editor-toolbar button svg {
+  /* If icons are direct children */
+  pointer-events: none; /* Make sure clicks go to button */
+}
+
+.editor-toolbar button.is-active {
+  background-color: #e0e0e0;
+  font-weight: bold;
+}
+
+.toolbar-divider {
+  display: inline-block;
+  width: 1px;
+  background-color: #ccc;
+  height: 20px; /* Adjust as needed */
+  margin: 0 8px; /* Adjust spacing */
+  vertical-align: middle;
+}
+
+.editor-content-area {
+  flex-grow: 1;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+/* Basic TipTap ProseMirror editor styling (can be adjusted) */
+.ProseMirror {
+  min-height: 200px; /* Adjust as needed */
+  outline: none;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #adb5bd;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Styling for the AI Prompt Anchor Mark */
+.ProseMirror span[data-prompt-id] {
+  background-color: #fff9c4; /* Light yellow */
+  cursor: help; /* Indicates that this text has associated information or action */
+}

@@ -21,6 +21,7 @@ import SchedulesView from './components/schedule/SchedulesView';
 import ProviderSettings from './components/settings/providers/ProviderSettingsPage';
 import RecipeEditor from './components/RecipeEditor';
 import RecipesView from './components/RecipesView';
+import TextEditorView from './components/TextEditor/TextEditorView'; // Added TextEditorView import
 import { useChat } from './hooks/useChat';
 
 import 'react-toastify/dist/ReactToastify.css';
@@ -47,7 +48,8 @@ export type View =
   | 'loading'
   | 'recipeEditor'
   | 'recipes'
-  | 'permission';
+  | 'permission'
+  | 'textEditor';
 
 export type ViewOptions = {
   // Settings view options
@@ -547,17 +549,20 @@ export default function App() {
               }}
             />
           )}
+          {view === 'permission' && (
+            <PermissionSettingsView
+              onClose={() => setView((viewOptions as { parentView: View }).parentView)}
+            />
+          )}
+          {/* START: New Text Editor View Rendering */}
+          {view === 'textEditor' && <TextEditorView setView={setView} />}
+          {/* END: New Text Editor View Rendering */}
           {view === 'recipeEditor' && (
             <RecipeEditor
               config={(viewOptions?.config as Recipe) || window.electron.getConfig().recipeConfig}
             />
           )}
           {view === 'recipes' && <RecipesView onBack={() => setView('chat')} />}
-          {view === 'permission' && (
-            <PermissionSettingsView
-              onClose={() => setView((viewOptions as { parentView: View }).parentView)}
-            />
-          )}
         </div>
       </div>
       {isGoosehintsModalOpen && (

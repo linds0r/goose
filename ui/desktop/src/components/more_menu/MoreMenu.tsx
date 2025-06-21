@@ -1,7 +1,7 @@
 import { Popover, PopoverContent, PopoverPortal, PopoverTrigger } from '../ui/popover';
 import React, { useEffect, useState } from 'react';
 import { ChatSmart, Idea, Refresh, Time, Send, Settings } from '../icons';
-import { FolderOpen, Moon, Sliders, Sun, Save, FileText } from 'lucide-react';
+import { FolderOpen, Moon, Sliders, Sun, Save, FileText, Edit3 } from 'lucide-react'; // Added Edit3
 import { useConfig } from '../ConfigContext';
 import { ViewOptions, View } from '../../App';
 import { saveRecipe, generateRecipeFilename } from '../../recipe/recipeStorage';
@@ -324,7 +324,7 @@ export default function MoreMenu({
                         'recipeEditor' // view type
                       );
                     }}
-                    subtitle="View the recipe you're using"
+                    subtitle="View the recipe you\'re using"
                     icon={<Send className="w-4 h-4" />}
                   >
                     View recipe
@@ -362,6 +362,20 @@ export default function MoreMenu({
               >
                 Go to Recipe Library
               </MenuButton>
+
+              {/* START: New Text Editor Button */}
+              <MenuButton
+                onClick={() => {
+                  setOpen(false);
+                  setView('textEditor');
+                }}
+                subtitle="Open the built-in text editor"
+                icon={<Edit3 className="w-4 h-4" />}
+              >
+                Text Editor
+              </MenuButton>
+              {/* END: New Text Editor Button */}
+
               <MenuButton
                 onClick={() => {
                   setOpen(false);
