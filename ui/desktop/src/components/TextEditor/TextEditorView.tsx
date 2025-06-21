@@ -63,6 +63,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
   const handleAIBatchResponse = (aiResponseObject: Message, reason: string) => {
     console.log('AI Batch Response Received by onFinish:', aiResponseObject, 'Reason:', reason);
     let parsedResponse: AIBatchTextRevisionResponse | null = null;
+    let rawTextContent = '';
 
     if (
       aiResponseObject &&
@@ -71,31 +72,60 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       aiResponseObject.content[0].type === 'text' &&
       typeof aiResponseObject.content[0].text === 'string'
     ) {
+      rawTextContent = aiResponseObject.content[0].text;
       try {
-        parsedResponse = JSON.parse(aiResponseObject.content[0].text);
+        // Use RegExp constructor for the regex to avoid issues with slashes in literals
+        // and ensure it's treated as a string that can handle newlines if they were ever in the regex pattern itself.
+        const jsonRegex = new RegExp('```json\\s*([\\s\\S]*?)\\s*```');
+        const match = rawTextContent.match(jsonRegex);
+
+        let cleanedJsonString = rawTextContent;
+        if (match && match[1]) {
+          cleanedJsonString = match[1].trim();
+          console.log('Extracted JSON from Markdown fences:', cleanedJsonString);
+        } else {
+          cleanedJsonString = rawTextContent.trim();
+          if (
+            !(
+              (cleanedJsonString.startsWith('{') && cleanedJsonString.endsWith('}')) ||
+              (cleanedJsonString.startsWith('[') && cleanedJsonString.endsWith(']'))
+            )
+          ) {
+            // Ensure this console.warn is a single line
+            console.warn(
+              'Response does not appear to be JSON and was not in ```json fences. Parsing as is.'
+            );
+          }
+        }
+
+        parsedResponse = JSON.parse(cleanedJsonString);
       } catch (e) {
+        // Ensure this console.error's first string argument is a single, continuous line
         console.error(
-          'Failed to parse AI response text as JSON. Expected direct JSON output from LLM.',
+          'Failed to parse AI response text as JSON. Expected direct JSON output from LLM or JSON within ```json fences.',
           e,
-          'Raw response text:',
-          aiResponseObject.content[0].text
+          'Original Raw response text:',
+          rawTextContent
         );
       }
     } else {
       console.error(
-        'AI response content is not in the expected format (single text item containing JSON).'
+        'AI response content is not in the expected format (single text item containing JSON string).'
       );
     }
 
     if (!parsedResponse || !Array.isArray(parsedResponse.suggestions)) {
-      console.error('Parsed AI response is invalid or no suggestions array found.', parsedResponse);
+      console.error(
+        'Parsed AI response is invalid or no suggestions array found. Parsed object:',
+        parsedResponse
+      );
       setPendingPrompts((prev) => {
         const updated = { ...prev };
         Object.keys(updated).forEach((promptId) => {
           if (updated[promptId].status === 'processing') {
             updated[promptId].status = 'error';
             updated[promptId].errorMessage =
-              'AI response format error, no suggestions, or parse failure.';
+              `AI response format error (raw text: "${rawTextContent.substring(0, 100)}...") or parse failure.`;
           }
         });
         return updated;
@@ -121,6 +151,25 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
               suggestion.errorMessage || 'AI processing failed for this item.';
             updatedPrompts[suggestion.promptId].aiSuggestion = undefined;
           }
+        } else if (
+          updatedPrompts[suggestion.promptId] &&
+          updatedPrompts[suggestion.promptId].status !== 'processing'
+        ) {
+          console.warn(
+            `Received suggestion for promptId ${suggestion.promptId} which was not in 'processing' state. Current status: ${updatedPrompts[suggestion.promptId].status}`
+          );
+        } else if (!updatedPrompts[suggestion.promptId]) {
+          console.warn(`Received suggestion for unknown promptId ${suggestion.promptId}.`);
+        }
+      });
+      Object.keys(updatedPrompts).forEach((promptId) => {
+        if (
+          updatedPrompts[promptId].status === 'processing' &&
+          !parsedResponse!.suggestions.find((s) => s.promptId === promptId)
+        ) {
+          updatedPrompts[promptId].status = 'error';
+          updatedPrompts[promptId].errorMessage =
+            'AI response received, but this specific item was not included in the suggestions.';
         }
       });
       return updatedPrompts;
