@@ -4,11 +4,17 @@ export interface Comment {
   id: string;
   textRange: { from: number; to: number };
   selectedText: string;
-  userComment: string;
+  instruction: string;
+  status: 'pending' | 'processing' | 'suggestion_ready' | 'applied' | 'error';
+  aiSuggestion?: string;
   timestamp: Date;
-  resolved: boolean;
-  aiResponse?: string;
-  responseTimestamp?: Date;
+  errorMessage?: string;
+}
+
+export interface CommentThread {
+  commentId: string;
+  position: { top: number; right: number };
+  isVisible: boolean;
 }
 
 export interface Document {

@@ -5,27 +5,13 @@ import StarterKit from '@tiptap/starter-kit';
 import EditorToolbar from './EditorToolbar';
 import './TextEditor.css';
 import { View, ViewOptions } from '../../App';
-import AIPromptAnchorMark from './extensions/AIPromptAnchorMark';
+import CommentHighlightMark from './extensions/CommentHighlightMark';
 import { useMessageStream } from '../../hooks/useMessageStream';
 import { getApiUrl } from '../../config';
 import type { Message } from '../../types/message'; // Using type import for Message
+import { Comment } from './DocumentTypes';
 
 const generateSimpleUUID = () => `id-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-interface PendingAIPrompt {
-  promptId: string;
-  originalText: string;
-  instruction: string;
-  aiSuggestion?: string;
-  status:
-    | 'instruction_pending'
-    | 'instruction_set'
-    | 'processing'
-    | 'suggestion_available'
-    | 'applied'
-    | 'error';
-  errorMessage?: string;
-}
 
 interface AIBatchTextRevisionRequest {
   editorSessionId: string;
@@ -48,17 +34,53 @@ interface AIBatchTextRevisionResponse {
   suggestions: Array<AISuggestionItem>;
 }
 
+// Interface for details passed from toolbar when a comment highlight is applied
+interface SelectionDetails {
+  from: number;
+  to: number;
+  selectedText: string;
+  commentId: string;
+}
+
 interface TextEditorViewProps {
   setView: (view: View, viewOptions?: ViewOptions) => void;
 }
 
 const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
-  const [pendingPrompts, setPendingPrompts] = useState<Record<string, PendingAIPrompt>>({});
-  const [activePromptId, setActivePromptId] = useState<string | null>(null);
+  const [comments, setComments] = useState<Record<string, Comment>>({});
+  // const [commentThreads, setCommentThreads] = useState<Record<string, CommentThread>>({}); // To be used in Step 3 (Comment Bubbles)
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
   const [currentInstructionInput, setCurrentInstructionInput] = useState<string>('');
   const [isInteractionPanelVisible, setIsInteractionPanelVisible] = useState<boolean>(false);
 
   const editorSessionIdRef = useRef<string>(`text-editor-session-${generateSimpleUUID()}`);
+
+  const handleApplyCommentHighlight = (selectionDetails: SelectionDetails) => {
+    const { from, to, selectedText, commentId } = selectionDetails;
+    if (!editor) return;
+
+    setComments((prev) => ({
+      ...prev,
+      [commentId]: {
+        id: commentId,
+        textRange: { from, to },
+        selectedText: selectedText,
+        instruction: '',
+        status: 'pending',
+        timestamp: new Date(),
+      },
+    }));
+
+    setActiveCommentId(commentId);
+    setCurrentInstructionInput('');
+    setIsInteractionPanelVisible(true);
+    // Consider if focusing the editor or a specific input is desired here
+    console.log(
+      'Comment highlight applied via callback and comment object created:',
+      commentId,
+      selectionDetails
+    );
+  };
 
   const handleAIBatchResponse = (aiResponseObject: Message, reason: string) => {
     console.log('AI Batch Response Received by onFinish:', aiResponseObject, 'Reason:', reason);
@@ -119,12 +141,12 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         'Parsed AI response is invalid or no suggestions array found. Parsed object:',
         parsedResponse
       );
-      setPendingPrompts((prev) => {
+      setComments((prev) => {
         const updated = { ...prev };
-        Object.keys(updated).forEach((promptId) => {
-          if (updated[promptId].status === 'processing') {
-            updated[promptId].status = 'error';
-            updated[promptId].errorMessage =
+        Object.keys(updated).forEach((commentId) => {
+          if (updated[commentId].status === 'processing') {
+            updated[commentId].status = 'error';
+            updated[commentId].errorMessage =
               `AI response format error (raw text: "${rawTextContent.substring(0, 100)}...") or parse failure.`;
           }
         });
@@ -133,46 +155,50 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       return;
     }
 
-    setPendingPrompts((prev) => {
-      const updatedPrompts = { ...prev };
+    setComments((prev) => {
+      const updatedComments = { ...prev };
       parsedResponse!.suggestions.forEach((suggestion) => {
+        // API still uses promptId, which corresponds to our comment.id
         if (
-          updatedPrompts[suggestion.promptId] &&
-          updatedPrompts[suggestion.promptId].status === 'processing'
+          updatedComments[suggestion.promptId] &&
+          updatedComments[suggestion.promptId].status === 'processing'
         ) {
           if (suggestion.status === 'success') {
-            updatedPrompts[suggestion.promptId].status = 'suggestion_available';
-            updatedPrompts[suggestion.promptId].aiSuggestion =
+            updatedComments[suggestion.promptId].status = 'suggestion_ready'; // Changed from 'suggestion_available'
+            updatedComments[suggestion.promptId].aiSuggestion =
               suggestion.revisedText || 'No revision suggested.';
-            updatedPrompts[suggestion.promptId].errorMessage = undefined;
+            updatedComments[suggestion.promptId].errorMessage = undefined;
           } else {
-            updatedPrompts[suggestion.promptId].status = 'error';
-            updatedPrompts[suggestion.promptId].errorMessage =
+            updatedComments[suggestion.promptId].status = 'error';
+            updatedComments[suggestion.promptId].errorMessage =
               suggestion.errorMessage || 'AI processing failed for this item.';
-            updatedPrompts[suggestion.promptId].aiSuggestion = undefined;
+            updatedComments[suggestion.promptId].aiSuggestion = undefined;
           }
         } else if (
-          updatedPrompts[suggestion.promptId] &&
-          updatedPrompts[suggestion.promptId].status !== 'processing'
+          updatedComments[suggestion.promptId] &&
+          updatedComments[suggestion.promptId].status !== 'processing'
         ) {
           console.warn(
-            `Received suggestion for promptId ${suggestion.promptId} which was not in 'processing' state. Current status: ${updatedPrompts[suggestion.promptId].status}`
+            `Received suggestion for comment.id (as promptId) ${suggestion.promptId} which was not in 'processing' state. Current status: ${updatedComments[suggestion.promptId].status}`
           );
-        } else if (!updatedPrompts[suggestion.promptId]) {
-          console.warn(`Received suggestion for unknown promptId ${suggestion.promptId}.`);
+        } else if (!updatedComments[suggestion.promptId]) {
+          console.warn(
+            `Received suggestion for unknown comment.id (as promptId) ${suggestion.promptId}.`
+          );
         }
       });
-      Object.keys(updatedPrompts).forEach((promptId) => {
+      Object.keys(updatedComments).forEach((commentId) => {
+        // Renamed promptId to commentId for clarity
         if (
-          updatedPrompts[promptId].status === 'processing' &&
-          !parsedResponse!.suggestions.find((s) => s.promptId === promptId)
+          updatedComments[commentId].status === 'processing' &&
+          !parsedResponse!.suggestions.find((s) => s.promptId === commentId) // s.promptId is the comment.id
         ) {
-          updatedPrompts[promptId].status = 'error';
-          updatedPrompts[promptId].errorMessage =
+          updatedComments[commentId].status = 'error';
+          updatedComments[commentId].errorMessage =
             'AI response received, but this specific item was not included in the suggestions.';
         }
       });
-      return updatedPrompts;
+      return updatedComments;
     });
   };
 
@@ -199,21 +225,21 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         errorMessage = aiError.message;
       }
 
-      setPendingPrompts((prev) => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach((promptId) => {
-          if (updated[promptId].status === 'processing') {
-            updated[promptId].status = 'error';
-            updated[promptId].errorMessage = errorMessage;
+      setComments((prev) => {
+        const updatedComments = { ...prev };
+        Object.keys(updatedComments).forEach((commentId) => {
+          if (updatedComments[commentId].status === 'processing') {
+            updatedComments[commentId].status = 'error';
+            updatedComments[commentId].errorMessage = errorMessage;
           }
         });
-        return updated;
+        return updatedComments;
       });
     }
-  }, [aiError, setPendingPrompts]);
+  }, [aiError, setComments]);
 
   const editor = useEditor({
-    extensions: [StarterKit, AIPromptAnchorMark],
+    extensions: [StarterKit, CommentHighlightMark],
     content: `<h2>Hi there,</h2><p>this is a <em>basic</em> example of <strong>tiptap</strong>.</p><p>Select some text and click the speech bubble with a plus to add an AI prompt. Then type your instruction in the panel below and save it. You can add multiple prompts. Finally, click "Send to AI" in the toolbar.</p>`,
     editorProps: {
       attributes: {
@@ -222,50 +248,59 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
     },
     onSelectionUpdate: ({ editor: currentEditor }: { editor: Editor }) => {
       const { selection } = currentEditor.state;
-      const isActiveAnchor = currentEditor.isActive('aiPromptAnchor');
-      if (isActiveAnchor && !selection.empty) {
-        const attrs = currentEditor.getAttributes('aiPromptAnchor');
-        const currentSelectedPromptId = attrs.promptId as string;
-        const selectedText = currentEditor.state.doc.textBetween(selection.from, selection.to);
-        if (currentSelectedPromptId && selectedText) {
-          setActivePromptId(currentSelectedPromptId);
-          if (!pendingPrompts[currentSelectedPromptId]) {
-            setPendingPrompts((prev) => ({
-              ...prev,
-              [currentSelectedPromptId]: {
-                promptId: currentSelectedPromptId,
-                originalText: selectedText,
-                instruction: '',
-                status: 'instruction_pending',
-              },
-            }));
-            setCurrentInstructionInput('');
-          } else {
-            setCurrentInstructionInput(pendingPrompts[currentSelectedPromptId].instruction);
-          }
+      const isActiveHighlight = currentEditor.isActive('commentHighlight');
+
+      if (isActiveHighlight && !selection.empty) {
+        const attrs = currentEditor.getAttributes('commentHighlight');
+        const currentCommentId = attrs.commentId as string;
+
+        if (currentCommentId && comments[currentCommentId]) {
+          // An existing comment highlight is selected, load its data for the panel
+          setActiveCommentId(currentCommentId);
+          setCurrentInstructionInput(comments[currentCommentId].instruction || '');
           setIsInteractionPanelVisible(true);
+        } else if (currentCommentId && !comments[currentCommentId]) {
+          // A highlight mark exists but its comment data is missing in state.
+          // This might indicate an orphaned mark or a state inconsistency.
+          console.warn(
+            `Orphaned commentHighlight mark detected with ID: ${currentCommentId}. Clearing active state.`
+          );
+          setActiveCommentId(null);
+          setIsInteractionPanelVisible(false); // Hide panel if inconsistent state detected
         }
+        // If currentCommentId is null/undefined from attrs, do nothing (should not happen if isActiveHighlight is true)
+      } else {
+        // If no highlight is active, or selection is empty, consider if panel should be hidden.
+        // For now, only explicit actions (like cancel button) will hide the panel.
+        // setActiveCommentId(null); // Optionally clear active ID if nothing is highlighted
+        // setIsInteractionPanelVisible(false); // Optionally hide panel
       }
     },
   });
 
   const handleSaveInstruction = () => {
-    if (!activePromptId || !editor) return;
-    setPendingPrompts((prev) => ({
-      ...prev,
-      [activePromptId]: {
-        ...(prev[activePromptId] || {
-          promptId: activePromptId,
-          originalText: '',
-          status: 'instruction_pending',
-        }),
-        instruction: currentInstructionInput,
-        status: 'instruction_set',
-      },
-    }));
+    if (!activeCommentId || !editor) return;
+    setComments((prev) => {
+      const existingComment = prev[activeCommentId];
+      if (!existingComment) {
+        console.error(
+          `Attempted to save instruction for non-existent commentId: ${activeCommentId}`
+        );
+        return prev; // Or handle error appropriately
+      }
+      return {
+        ...prev,
+        [activeCommentId]: {
+          ...existingComment,
+          instruction: currentInstructionInput,
+          status: 'pending', // Instruction is saved, comment remains pending for processing
+          timestamp: new Date(), // Update timestamp on modification
+        },
+      };
+    });
     console.log(
-      'Instruction saved for promptId:',
-      activePromptId,
+      'Instruction saved for commentId:',
+      activeCommentId,
       'Instruction:',
       currentInstructionInput
     );
@@ -273,63 +308,160 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
 
   const handleCancelInteraction = () => {
     setIsInteractionPanelVisible(false);
-    setActivePromptId(null);
+    setActiveCommentId(null);
     setCurrentInstructionInput('');
     if (editor) editor.chain().focus().run();
   };
 
-  useEffect(() => {
-    if (activePromptId && pendingPrompts[activePromptId] && isInteractionPanelVisible) {
-      setCurrentInstructionInput(pendingPrompts[activePromptId].instruction || '');
-    } else if (!isInteractionPanelVisible) {
-      setActivePromptId(null);
-      setCurrentInstructionInput('');
-    }
-  }, [activePromptId, pendingPrompts, isInteractionPanelVisible]);
+  const handleAcceptSuggestion = (commentIdToAccept: string) => {
+    if (!editor || !commentIdToAccept) return;
 
-  const handleTriggerAIBatchProcessing = () => {
-    if (!editor || isAiLoading) return;
-    const promptsToProcessArray = Object.values(pendingPrompts).filter(
-      (p) => p.status === 'instruction_set' && p.instruction.trim() !== ''
-    );
-    if (promptsToProcessArray.length === 0) {
-      console.log('No prompts with instructions set to send to AI.');
+    const commentToApply = comments[commentIdToAccept];
+    if (
+      !commentToApply ||
+      !commentToApply.aiSuggestion ||
+      commentToApply.status !== 'suggestion_ready'
+    ) {
+      console.warn(
+        'No suggestion available or comment not in correct state for comment.id:',
+        commentIdToAccept
+      );
       return;
     }
 
-    setPendingPrompts((prev) => {
-      const updated = { ...prev };
-      promptsToProcessArray.forEach((p) => {
-        if (updated[p.promptId]) updated[p.promptId].status = 'processing';
+    const suggestionText = commentToApply.aiSuggestion;
+    let markFoundAndReplaced = false;
+    let fromPos: number | null = null;
+    let toPos: number | null = null;
+
+    // The existing AIPromptAnchorMark uses `promptId` in its attributes.
+    // For now, we assume commentIdToAccept is the value stored in mark.attrs.promptId.
+    // This will be updated when AIPromptAnchorMark is replaced by CommentHighlightMark.
+    editor.state.doc.descendants((node, pos) => {
+      if (markFoundAndReplaced) return false;
+
+      if (node.isText) {
+        const marks = node.marks.filter(
+          (mark) =>
+            mark.type.name === 'commentHighlight' && mark.attrs.commentId === commentIdToAccept
+        );
+
+        if (marks.length > 0) {
+          fromPos = pos;
+          toPos = pos + node.nodeSize;
+          markFoundAndReplaced = true;
+          return false;
+        }
+      }
+      return true;
+    });
+
+    if (markFoundAndReplaced && fromPos !== null && toPos !== null) {
+      editor
+        .chain()
+        .focus()
+        .setTextSelection({ from: fromPos, to: toPos })
+        .insertContent(suggestionText)
+        .run();
+
+      setComments((prev) => {
+        const updatedComment = {
+          ...prev[commentIdToAccept],
+          status: 'applied' as const,
+          aiSuggestion: undefined,
+          // errorMessage can remain or be cleared, depending on desired logic for reapplying after error.
+        };
+        return {
+          ...prev,
+          [commentIdToAccept]: updatedComment,
+        };
       });
-      return updated;
+      console.log('Suggestion applied for comment.id:', commentIdToAccept);
+    } else {
+      console.warn(
+        'Could not find the CommentHighlightMark in the document for comment.id:',
+        commentIdToAccept
+      );
+      /* ---- TEMPORARILY COMMENTED OUT FOR DEBUGGING TS2367 ----
+      if (commentToApply.status !== 'applied') { 
+        setComments((prev) => ({
+          ...prev,
+          [commentIdToAccept]: {
+            ...prev[commentIdToAccept],
+            status: 'error',
+            errorMessage: 'Failed to find text in editor to apply suggestion. Text might have been altered or deleted.',
+          },
+        }));
+      }
+      */ // ---- END OF TEMPORARY COMMENT ----
+    }
+  };
+
+  useEffect(() => {
+    if (activeCommentId && comments[activeCommentId] && isInteractionPanelVisible) {
+      setCurrentInstructionInput(comments[activeCommentId].instruction || '');
+    } else if (!isInteractionPanelVisible) {
+      setActiveCommentId(null); // Clear active comment when panel is hidden
+      setCurrentInstructionInput('');
+    }
+  }, [activeCommentId, comments, isInteractionPanelVisible]);
+
+  // useEffect for logging comments state when it changes
+  useEffect(() => {
+    console.log('Comments state updated:', JSON.stringify(comments, null, 2));
+  }, [comments]);
+
+  const handleTriggerAIBatchProcessing = () => {
+    if (!editor || isAiLoading) return;
+
+    // Filter comments that are pending and have an instruction
+    const commentsToProcessArray = Object.values(comments).filter(
+      (c) => c.status === 'pending' && c.instruction && c.instruction.trim() !== ''
+    );
+
+    if (commentsToProcessArray.length === 0) {
+      console.log('No comments with instructions ready to send to AI.');
+      return;
+    }
+
+    // Set status to 'processing' for these comments
+    setComments((prev) => {
+      const updatedComments = { ...prev };
+      commentsToProcessArray.forEach((comment) => {
+        if (updatedComments[comment.id]) {
+          updatedComments[comment.id].status = 'processing';
+        }
+      });
+      return updatedComments;
     });
 
     const fullDocumentContent = editor.getHTML();
     const batchRequestPayload: AIBatchTextRevisionRequest = {
       editorSessionId: editorSessionIdRef.current,
       fullDocumentWithDelineators: fullDocumentContent,
-      prompts: promptsToProcessArray.map((p) => ({
-        promptId: p.promptId,
-        instruction: p.instruction,
-        originalText: p.originalText,
+      prompts: commentsToProcessArray.map((comment) => ({
+        promptId: comment.id, // API expects promptId, we use our comment.id
+        instruction: comment.instruction,
+        originalText: comment.selectedText, // Use selectedText from Comment interface
       })),
     };
 
     const stringifiedPayload = JSON.stringify(batchRequestPayload);
+    // The instructionToLLM string remains largely the same as it describes the API contract.
+    // Just ensure it aligns with the fact that promptId from the API maps to our comment.id.
     const instructionToLLM = `Please process the following batch request for a text editor.
 The details of the request are in the JSON object below, marked with 'BATCH_JSON_START' and 'BATCH_JSON_END'.
 The JSON object contains:
 1. 'editorSessionId': An ID for this editing session.
-2. 'fullDocumentWithDelineators': The complete HTML content of the document. Within this HTML, sections targeted for AI processing are marked by <span data-prompt-id="PROMPT_ID_HERE">...text...</span>. The 'PROMPT_ID_HERE' corresponds to a 'promptId' in the 'prompts' array.
+2. 'fullDocumentWithDelineators': The complete HTML content of the document. Within this HTML, sections targeted for AI processing are marked by <span data-comment-id="COMMENT_ID_HERE" class="comment-highlight">...text...</span>. The 'COMMENT_ID_HERE' corresponds to a 'promptId' in the 'prompts' array (which is the comment.id from the editor).
 3. 'prompts': An array of objects, where each object has:
-   - 'promptId': The unique identifier for a marked section in the 'fullDocumentWithDelineators'.
+   - 'promptId': The unique identifier for a marked section in the 'fullDocumentWithDelineators' (this is the comment.id from the editor, and it matches the 'COMMENT_ID_HERE' in the span's data-comment-id attribute).
    - 'instruction': The specific user instruction for what to do with the 'originalText'.
-   - 'originalText': The text content of the span identified by 'promptId' (Note: The AI should find the text within the span in 'fullDocumentWithDelineators' using the promptId rather than solely relying on this 'originalText' field if context is important, as 'originalText' might be stale if the document was edited after the anchor was created but before this batch submission).
+   - 'originalText': The text content of the span identified by 'promptId' (Note: The AI should find the text within the span in 'fullDocumentWithDelineators' using the data-comment-id attribute matching this promptId rather than solely relying on this 'originalText' field if context is important, as 'originalText' might be stale if the document was edited after the anchor was created but before this batch submission).
 
 Your task is to:
 For each prompt in the 'prompts' array:
-  - Perform the requested 'instruction' on the text associated with its 'promptId' from 'fullDocumentWithDelineators', considering surrounding context.
+  - Perform the requested 'instruction' on the text associated with its 'promptId' (found via the data-comment-id attribute in 'fullDocumentWithDelineators'), considering surrounding context.
   - Generate a 'revisedText'.
 
 Respond with ONLY a single, valid JSON object (no other text, explanations, or markdown formatting before or after it) that follows this exact structure:
@@ -375,18 +507,29 @@ BATCH_JSON_END
       <EditorToolbar
         editor={editor}
         setView={setView}
-        pendingPrompts={pendingPrompts}
+        comments={comments}
+        onApplyCommentHighlight={handleApplyCommentHighlight} // Added new prop
         onSendAllToAI={handleTriggerAIBatchProcessing}
         isAiLoading={isAiLoading}
       />
     );
   };
 
+  // Determine if the instruction input area should be shown
+  let shouldShowInstructionArea = false;
+  if (activeCommentId && comments[activeCommentId]) {
+    const status = comments[activeCommentId].status;
+    shouldShowInstructionArea =
+      status === 'pending' ||
+      status === 'processing' || // Textarea will be disabled via its own prop if processing
+      status === 'error';
+  }
+
   return (
     <div className="text-editor-container" style={{ paddingTop: '38px' }}>
       {getToolbar()}
       <EditorContent editor={editor} className="editor-content-area" />
-      {isInteractionPanelVisible && activePromptId && pendingPrompts[activePromptId] && (
+      {isInteractionPanelVisible && activeCommentId && comments[activeCommentId] && (
         <div
           className="ai-prompt-input-area"
           style={{
@@ -414,7 +557,7 @@ BATCH_JSON_END
             &times;
           </button>
           <h4>
-            AI Interaction for: <code>{activePromptId}</code>
+            AI Interaction for: <code>{activeCommentId}</code>
           </h4>
           <div
             style={{
@@ -429,47 +572,53 @@ BATCH_JSON_END
               marginBottom: '10px',
             }}
           >
-            Original Text: <strong>"{pendingPrompts[activePromptId]?.originalText}"</strong>
+            Original Text: <strong>"{comments[activeCommentId]?.selectedText}"</strong>
           </div>
-          <textarea
-            value={currentInstructionInput}
-            onChange={(e) => setCurrentInstructionInput(e.target.value)}
-            placeholder="Enter your instruction for the AI..."
-            rows={3}
-            style={{
-              width: '100%',
-              padding: '8px',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              margin: '10px 0',
-              boxSizing: 'border-box',
-            }}
-            disabled={isAiLoading && pendingPrompts[activePromptId]?.status === 'processing'}
-          />
-          <button
-            onClick={handleSaveInstruction}
-            style={{
-              padding: '8px 12px',
-              marginRight: '10px',
-              background: '#28a745',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-            }}
-            disabled={
-              !currentInstructionInput.trim() ||
-              (isAiLoading && pendingPrompts[activePromptId]?.status === 'processing')
-            }
-          >
-            Save Instruction
-          </button>
-          {pendingPrompts[activePromptId]?.status === 'processing' && (
+          {/* Only show instruction input based on refined logic */}
+          {shouldShowInstructionArea && (
+            <>
+              <textarea
+                value={currentInstructionInput}
+                onChange={(e) => setCurrentInstructionInput(e.target.value)}
+                placeholder="Enter your instruction for the AI..."
+                rows={3}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  border: '1px solid #ccc',
+                  borderRadius: '4px',
+                  margin: '10px 0',
+                  boxSizing: 'border-box',
+                }}
+                disabled={isAiLoading && comments[activeCommentId]?.status === 'processing'}
+                aria-label="AI Instruction Input"
+              />
+              <button
+                onClick={handleSaveInstruction}
+                style={{
+                  padding: '8px 12px',
+                  marginRight: '10px',
+                  background: '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                }}
+                disabled={
+                  !currentInstructionInput.trim() ||
+                  (isAiLoading && comments[activeCommentId]?.status === 'processing')
+                }
+              >
+                Save Instruction
+              </button>
+            </>
+          )}
+          {comments[activeCommentId]?.status === 'processing' && (
             <span style={{ fontStyle: 'italic' }}>Processing with AI...</span>
           )}
 
-          {pendingPrompts[activePromptId]?.status === 'suggestion_available' &&
-            pendingPrompts[activePromptId]?.aiSuggestion && (
+          {comments[activeCommentId]?.status === 'suggestion_ready' &&
+            comments[activeCommentId]?.aiSuggestion && (
               <div style={{ marginTop: '15px', borderTop: '1px dashed #ccc', paddingTop: '10px' }}>
                 <h5>AI Suggestion:</h5>
                 <div
@@ -483,18 +632,37 @@ BATCH_JSON_END
                     overflowY: 'auto',
                   }}
                 >
-                  {pendingPrompts[activePromptId]?.aiSuggestion}
+                  {comments[activeCommentId]?.aiSuggestion}
                 </div>
-                {/* TODO: Add "Accept Suggestion" button here */}
+                <button
+                  onClick={() => handleAcceptSuggestion(activeCommentId!)}
+                  style={{
+                    padding: '8px 12px',
+                    marginRight: '10px',
+                    background: '#007bff',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                  disabled={isAiLoading || comments[activeCommentId!]?.status === 'processing'}
+                >
+                  Accept Suggestion
+                </button>
               </div>
             )}
-          {pendingPrompts[activePromptId]?.status === 'error' && (
+          {comments[activeCommentId]?.status === 'applied' && (
+            <div style={{ marginTop: '15px', color: 'green', fontWeight: 'bold' }}>
+              Suggestion applied!
+            </div>
+          )}
+          {comments[activeCommentId]?.status === 'error' && (
             <div style={{ marginTop: '15px', color: 'red' }}>
-              Error: {pendingPrompts[activePromptId]?.errorMessage || 'An unknown error occurred.'}
+              Error: {comments[activeCommentId]?.errorMessage || 'An unknown error occurred.'}
             </div>
           )}
           <p style={{ fontSize: '0.8em', color: '#777', marginTop: '10px', marginBottom: '0' }}>
-            Status: {pendingPrompts[activePromptId]?.status}
+            Status: {comments[activeCommentId]?.status}
           </p>
         </div>
       )}

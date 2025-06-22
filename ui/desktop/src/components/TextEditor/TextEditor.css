@@ -69,3 +69,10 @@
   background-color: #fff9c4; /* Light yellow */
   cursor: help; /* Indicates that this text has associated information or action */
 }
+
+/* Styling for the new Comment Highlight Mark */
+.comment-highlight {
+  background-color: #e6f7ff; /* Light blue, similar to some suggestion UI */
+  /* Or use a yellow: background-color: #fff9e6; */
+  /* cursor: pointer; /* Optional: to indicate it's interactive */
+}

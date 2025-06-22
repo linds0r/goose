@@ -62,9 +62,7 @@ export class DocumentStorage {
           ? doc.comments.map((comment) => ({
               ...comment,
               timestamp: new Date(comment.timestamp),
-              responseTimestamp: comment.responseTimestamp
-                ? new Date(comment.responseTimestamp)
-                : undefined,
+              // responseTimestamp removed as it's no longer on the Comment type
             }))
           : [], // Default to empty array if comments are not an array
       }));

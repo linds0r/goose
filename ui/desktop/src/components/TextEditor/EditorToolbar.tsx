@@ -18,24 +18,30 @@ import {
   Loader2, // Added Loader2 for loading state
 } from 'lucide-react';
 
-// Minimal type for what the toolbar needs from pendingPrompts
-interface PendingPromptInfo {
-  instruction: string;
-  status: string;
+import { Comment } from './DocumentTypes';
+
+// Interface for details passed to the parent when a comment highlight is applied
+interface SelectionDetails {
+  from: number;
+  to: number;
+  selectedText: string;
+  commentId: string;
 }
 
 interface EditorToolbarProps {
   editor: Editor | null;
   setView: (view: View, viewOptions?: ViewOptions) => void;
-  pendingPrompts: Record<string, PendingPromptInfo>;
-  onSendAllToAI: () => void; // Function to trigger AI batch processing
-  isAiLoading: boolean; // Loading state for AI requests
+  comments: Record<string, Comment>;
+  onApplyCommentHighlight: (details: SelectionDetails) => void; // New prop
+  onSendAllToAI: () => void;
+  isAiLoading: boolean;
 }
 
 const EditorToolbar: React.FC<EditorToolbarProps> = ({
   editor,
   setView,
-  pendingPrompts,
+  comments,
+  onApplyCommentHighlight, // Added new prop
   onSendAllToAI,
   isAiLoading,
 }) => {
@@ -43,19 +49,38 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
     return null;
   }
 
-  const addAIPrompt = () => {
-    const promptId = `ai-prompt-${Date.now()}`;
-    editor.chain().focus().setAIPromptAnchor({ promptId }).run();
+  const addCommentHighlight = () => {
+    if (!editor || editor.state.selection.empty) {
+      return; // Don't do anything if there's no selection or editor isn't available
+    }
+
+    const { from, to } = editor.state.selection;
+    const selectedText = editor.state.doc.textBetween(from, to);
+    const commentId = `comment-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`; // Unique ID
+
+    // 1. Apply the mark to the editor for visual highlighting
+    editor.chain().focus().setCommentHighlight({ commentId }).run();
+
+    // 2. Call the callback to create the comment object in TextEditorView's state
+    //    and open the interaction panel.
+    onApplyCommentHighlight({
+      from,
+      to,
+      selectedText,
+      commentId,
+    });
   };
 
-  const getPromptsToSendCount = () => {
-    return Object.values(pendingPrompts).filter(
-      (prompt) => prompt.status === 'instruction_set' && prompt.instruction.trim() !== ''
+  // Renamed and updated logic to use comments and new status
+  const getCommentsToSendCount = () => {
+    return Object.values(comments).filter(
+      (comment) =>
+        comment.status === 'pending' && comment.instruction && comment.instruction.trim() !== ''
     ).length;
   };
 
-  const promptsReadyCount = getPromptsToSendCount();
-  const canSendToAI = promptsReadyCount > 0;
+  const commentsReadyCount = getCommentsToSendCount(); // Renamed variable
+  const canSendToAI = commentsReadyCount > 0;
 
   return (
     <div className="editor-toolbar">
@@ -71,9 +96,9 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
       {/* AI Interaction Buttons */}
       <button
-        onClick={addAIPrompt}
+        onClick={addCommentHighlight} // Changed from addAIPrompt
         disabled={editor.state.selection.empty || isAiLoading}
-        title="Add AI Prompt Anchor"
+        title="Add Comment Highlight" // Updated title
       >
         <MessageSquarePlus size={18} />
       </button>
@@ -88,7 +113,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
       >
         {isAiLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
         <span style={{ marginLeft: '4px' }}>
-          {isAiLoading ? 'Sending...' : `Send to AI (${promptsReadyCount})`}
+          {isAiLoading ? 'Sending...' : `Send to AI (${commentsReadyCount})`}
         </span>
       </button>
 
