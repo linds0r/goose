@@ -6,6 +6,8 @@ import EditorToolbar from './EditorToolbar';
 import './TextEditor.css';
 import { View, ViewOptions } from '../../App';
 import CommentHighlightMark from './extensions/CommentHighlightMark';
+import StrikethroughDiffMark from './extensions/StrikethroughDiffMark';
+import BoldItalicAddMark from './extensions/BoldItalicAddMark';
 import { useMessageStream } from '../../hooks/useMessageStream';
 import { getApiUrl } from '../../config';
 import type { Message } from '../../types/message';
@@ -111,6 +113,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
               );
             }
           }
+          console.log('Attempting to parse this JSON string:', cleanedJsonString); // Added for debugging
           parsedResponse = JSON.parse(cleanedJsonString);
         } catch (e) {
           console.error('Failed to parse AI response as JSON.', e, 'Raw text:', rawTextContent);
@@ -174,8 +177,8 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
 
   // 4. EDITOR HOOK (useEditor)
   const editor = useEditor({
-    extensions: [StarterKit, CommentHighlightMark],
-    content: `<h2>Hi there,</h2><p>this is a <em>basic</em> example of <strong>tiptap</strong>.</p><p>Select text, click the comment bubble icon. Type instructions in the sidebar bubble, save, then send to AI.</p>`,
+    extensions: [StarterKit, CommentHighlightMark, StrikethroughDiffMark, BoldItalicAddMark],
+    content: `<h2>Goose Text Editor</h2><p>Create documents with integrated AI using comment bubbles instead of a chatbot.</p><p><strong>Using the AI:</strong></p><p>To use the AI assistant, simply write your content in the document and add comments where you want AI help. When you add a comment, you can ask the AI to generate new content, revise existing text, or provide suggestions for that specific location. The AI will respond within the comment bubble, and you can choose whether to keep, modify, or delete both your original text and the AI's suggestions. You have full control over what stays in your document.</p><p><strong>Using AI for Revision:</strong></p><ol><li><strong>Select Text:</strong> Highlight text for AI revision.</li><li><strong>Add Comment:</strong> Attach your instruction (e.g., "Shorten," "Make persuasive").</li><li><strong>Process & Review:</strong><ul><li>Submit comments.</li><li>AI suggestions appear in the comment bubble.</li><li>Preview with "Show Inline": <s>original text</s>, <strong><em>new text</em></strong>.</li><li>Click "Apply" to accept.</li></ul></li></ol><p>Try it out the comment feature on this text, or start typing your own content!</p>`,
     editorProps: {
       attributes: {
         class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl m-5 focus:outline-none',
@@ -232,6 +235,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
           instruction: '',
           status: 'pending',
           timestamp: new Date(),
+          inlineVisible: false, // Initialize inlineVisible
         },
       }));
       setActiveCommentId(commentId);
@@ -267,6 +271,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
             instruction: instructionToSave,
             status: 'pending',
             timestamp: new Date(),
+            // inlineVisible should not be reset here, only on creation or explicit toggle/accept
           },
         };
       });
@@ -294,78 +299,95 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
   const handleCloseComment = useCallback(
     (commentIdToRemove: string) => {
       if (!editor) return;
+      if (comments[commentIdToRemove]?.inlineVisible) {
+        const c = comments[commentIdToRemove];
+        if (c && c.textRange && c.aiSuggestion) {
+          let { from, to } = c.textRange;
+          let liveFrom: number | null = null;
+          let liveTo: number | null = null;
+          editor.state.doc.descendants((node, pos) => {
+            if (node.isText) {
+              const mainMark = node.marks.find(
+                (m) => m.type.name === 'commentHighlight' && m.attrs.commentId === commentIdToRemove
+              );
+              if (mainMark) {
+                liveFrom = pos;
+                liveTo = pos + node.nodeSize;
+                return false;
+              }
+            }
+            return true;
+          });
+          if (liveFrom !== null && liveTo !== null) {
+            from = liveFrom;
+            to = liveTo;
+          }
 
-      console.log('handleCloseComment called for:', commentIdToRemove);
+          const suggestionStartPosition = to + 1;
+          const suggestionEndPosition = suggestionStartPosition + c.aiSuggestion.length;
+          editor
+            .chain()
+            .focus()
+            .setTextSelection({ from: to, to: suggestionEndPosition })
+            .deleteSelection()
+            .setTextSelection({ from, to })
+            .unsetMark('diffDel')
+            .unsetMark('diffAdd')
+            .run();
+        }
+      }
 
-      // 1. Remove comment from state
       setComments((prevComments) => {
         const updatedComments = { ...prevComments };
         delete updatedComments[commentIdToRemove];
         return updatedComments;
       });
 
-      // 2. Find and remove the CommentHighlightMark from editor
       let markFound = false;
       let fromPos = 0;
       let toPos = 0;
-
-      // Search through the document to find the mark with matching commentId
       editor.state.doc.descendants((node, pos) => {
-        if (markFound) return false; // Stop searching once found
-
+        if (markFound) return false;
         if (node.isText) {
           const commentMark = node.marks.find(
             (mark) =>
               mark.type.name === 'commentHighlight' && mark.attrs.commentId === commentIdToRemove
           );
-
           if (commentMark) {
             fromPos = pos;
             toPos = pos + node.nodeSize;
             markFound = true;
-            console.log(
-              `Found mark for comment ${commentIdToRemove} at range: ${fromPos}-${toPos}`
-            );
-            return false; // Stop iteration
+            return false;
           }
         }
-
-        return true; // Continue iteration for non-matching nodes
+        return true;
       });
 
-      // Remove the mark if found
       if (markFound) {
-        try {
-          editor
-            .chain()
-            .focus()
-            .setTextSelection({ from: fromPos, to: toPos })
-            .unsetMark('commentHighlight') // Use correct mark name
-            .run();
-          console.log(`Successfully removed highlight for comment ${commentIdToRemove}`);
-        } catch (error) {
-          console.error('Error removing comment highlight:', error);
-        }
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from: fromPos, to: toPos })
+          .unsetMark('commentHighlight')
+          .run();
       } else {
-        console.warn(`Could not find CommentHighlightMark for comment ${commentIdToRemove}`);
+        console.warn(
+          `Could not find CommentHighlightMark for comment ${commentIdToRemove} to remove it.`
+        );
       }
 
-      // 3. Clear editor selection and focus
       editor.commands.setTextSelection(0);
-
-      // 4. Clear active comment state if this was the active comment
       if (activeCommentId === commentIdToRemove) {
         setActiveCommentId(null);
         setCurrentInstructionInput('');
       }
     },
-    [editor, activeCommentId, setActiveCommentId, setComments, setCurrentInstructionInput]
+    [editor, comments, activeCommentId, setActiveCommentId, setComments, setCurrentInstructionInput]
   );
 
   const handleSendIndividualCommentToAI = useCallback<(commentId: string) => void>(
     (commentId: string): void => {
       if (!editor || isAiLoading || !comments[commentId]) return;
-
       let instructionForAI = comments[commentId].instruction;
       if (
         activeCommentId === commentId &&
@@ -374,19 +396,12 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         handleSaveInstruction(commentId, currentInstructionInput);
         instructionForAI = currentInstructionInput;
       }
-
       const commentToSend = comments[commentId];
       if (
         !(commentToSend.status === 'pending' && instructionForAI && instructionForAI.trim() !== '')
       ) {
-        console.warn(
-          'Comment not ready or no instruction for AI:',
-          commentId,
-          commentToSend.status
-        );
         return;
       }
-
       setComments((prev) => ({
         ...prev,
         [commentId]: { ...prev[commentId], status: 'processing' },
@@ -404,48 +419,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         ],
       };
       const stringifiedPayload = JSON.stringify(batchRequestPayload);
-      console.log('Stringified Payload (Individual Send):', stringifiedPayload);
-      const instructionToLLM = `Please process the following batch request for a text editor.
-The details of the request are in the JSON object below, marked with 'BATCH_JSON_START' and 'BATCH_JSON_END'.
-The JSON object contains:
-1. 'editorSessionId': An ID for this editing session.
-2. 'fullDocumentWithDelineators': The complete HTML content of the document. Within this HTML, sections targeted for AI processing are marked by <span data-comment-id="COMMENT_ID_HERE" class="comment-highlight">...text...</span>. The 'COMMENT_ID_HERE' corresponds to a 'promptId' in the 'prompts' array (which is the comment.id from the editor).
-3. 'prompts': An array of objects, where each object has:
-   - 'promptId': The unique identifier for a marked section in the 'fullDocumentWithDelineators' (this is the comment.id from the editor, and it matches the 'COMMENT_ID_HERE' in the span's data-comment-id attribute).
-   - 'instruction': The specific user instruction for what to do with the 'originalText'.
-   - 'originalText': The text content of the span identified by 'promptId' (Note: The AI should find the text within the span in 'fullDocumentWithDelineators' using the data-comment-id attribute matching this promptId rather than solely relying on this 'originalText' field if context is important, as 'originalText' might be stale if the document was edited after the anchor was created but before this batch submission).
-
-Your task is to:
-For each prompt in the 'prompts' array:
-  - Perform the requested 'instruction' on the text associated with its 'promptId' (found via the data-comment-id attribute in 'fullDocumentWithDelineators'), considering surrounding context.
-  - Generate a 'revisedText'.
-
-Respond with ONLY a single, valid JSON object (no other text, explanations, or markdown formatting before or after it) that follows this exact structure:
-{
-  "suggestions": [
-    {
-      "promptId": "PROMPT_ID_FROM_REQUEST",
-      "revisedText": "YOUR_SUGGESTED_REVISED_TEXT_HERE",
-      "status": "success",
-      "errorMessage": null
-    },
-    {
-      "promptId": "FAILED_PROMPT_ID",
-      "revisedText": null,
-      "status": "error",
-      "errorMessage": "Details about why processing failed for this item."
-    }
-  ]
-}
-
-BATCH_JSON_START
-${stringifiedPayload}
-BATCH_JSON_END
-`;
-      console.log(
-        'Instruction to LLM (Individual Send - final check at runtime):',
-        instructionToLLM
-      );
+      const instructionToLLM = `Please process the following batch request for a text editor.\nThe details of the request are in the JSON object below, marked with 'BATCH_JSON_START' and 'BATCH_JSON_END'.\nThe JSON object contains:\n1. 'editorSessionId': An ID for this editing session.\n2. 'fullDocumentWithDelineators': The complete HTML content of the document. Within this HTML, sections targeted for AI processing are marked by <span data-comment-id="COMMENT_ID_HERE" class="comment-highlight">...text...</span>. The 'COMMENT_ID_HERE' corresponds to a 'promptId' in the 'prompts' array (which is the comment.id from the editor).\n3. 'prompts': An array of objects, where each object has:\n   - 'promptId': The unique identifier for a marked section in the 'fullDocumentWithDelineators' (this is the comment.id from the editor, and it matches the 'COMMENT_ID_HERE' in the span's data-comment-id attribute).\n   - 'instruction': The specific user instruction for what to do with the 'originalText'.\n   - 'originalText': The text content of the span identified by 'promptId' (Note: The AI should find the text within the span in 'fullDocumentWithDelineators' using the data-comment-id attribute matching this promptId rather than solely relying on this 'originalText' field if context is important, as 'originalText' might be stale if the document was edited after the anchor was created but before this batch submission).\n\nYour task is to:\nFor each prompt in the 'prompts' array:\n  - Perform the requested 'instruction' on the text associated with its 'promptId' (found via the data-comment-id attribute in 'fullDocumentWithDelineators'), considering surrounding context.\n  - Generate a 'revisedText' with your suggested revision.\n  - **Important: Write the 'revisedText' as natural text with actual line breaks, quotes, and other characters as they should appear in the final document. Do not manually escape characters - the JSON parser will handle this automatically.**\n\nRespond with ONLY a single, valid JSON object (no other text, explanations, or markdown formatting before or after it) that follows this exact structure:\n{\n  "suggestions": [\n    {\n      "promptId": "PROMPT_ID_FROM_REQUEST",\n      "revisedText": "YOUR_SUGGESTED_REVISED_TEXT_HERE",\n      "status": "success",\n      "errorMessage": null\n    },\n    {\n      "promptId": "FAILED_PROMPT_ID",\n      "revisedText": null,\n      "status": "error",\n      "errorMessage": "Details about why processing failed for this item."\n    }\n  ]\n}\n\nBATCH_JSON_START\n${stringifiedPayload}\nBATCH_JSON_END\n`;
       sendToAI({
         id: `editor-msg-${generateSimpleUUID()}`,
         role: 'user',
@@ -482,155 +456,12 @@ BATCH_JSON_END
     if (editor) editor.chain().focus().run();
   }, [editor, setIsInteractionPanelVisible, setActiveCommentId, setCurrentInstructionInput]);
 
-  const handleAcceptSuggestion = useCallback(
-    (commentIdToAccept: string) => {
-      console.log('handleAcceptSuggestion called with ID:', commentIdToAccept);
-      if (!editor || !commentIdToAccept) {
-        console.warn('Editor or commentIdToAccept is missing.');
-        return;
-      }
-
-      console.log(
-        'Comment to apply (pre-check):',
-        JSON.stringify(comments[commentIdToAccept], null, 2)
-      );
-      const commentToApply = comments[commentIdToAccept];
-
-      if (
-        !commentToApply ||
-        !commentToApply.aiSuggestion ||
-        commentToApply.status !== 'suggestion_ready'
-      ) {
-        console.warn(
-          'Guard condition failed for accepting suggestion. Comment status:',
-          comments[commentIdToAccept]?.status,
-          'Suggestion:',
-          comments[commentIdToAccept]?.aiSuggestion
-        );
-        return;
-      }
-      console.log('Comment to apply (post-check):', JSON.stringify(commentToApply, null, 2));
-
-      const suggestionText = commentToApply.aiSuggestion;
-      let fromPos: number | null = null;
-      let toPos: number | null = null;
-
-      if (commentToApply.textRange) {
-        fromPos = commentToApply.textRange.from;
-        toPos = commentToApply.textRange.to;
-      }
-      console.log(
-        `Calculated positions: from=${fromPos}, to=${toPos}. Suggestion text: "${suggestionText}"`
-      );
-
-      if (
-        fromPos !== null &&
-        toPos !== null &&
-        editor.state.doc.content.size > 0 &&
-        fromPos < editor.state.doc.content.size &&
-        toPos <= editor.state.doc.content.size
-      ) {
-        console.log('Attempting to execute Tiptap chain steps individually...'); // MODIFIED LOG
-        try {
-          let selectionSuccess = false;
-          let contentSuccess = false;
-
-          if (editor.can().setTextSelection({ from: fromPos, to: toPos })) {
-            selectionSuccess = editor
-              .chain()
-              .focus()
-              .setTextSelection({ from: fromPos, to: toPos })
-              .run();
-            console.log('setTextSelection run. Success:', selectionSuccess);
-          } else {
-            console.warn('Cannot setTextSelection for the given range.', {
-              from: fromPos,
-              to: toPos,
-            });
-          }
-
-          if (selectionSuccess) {
-            // Ensure a fresh chain for insertContent if setTextSelection was run
-            if (editor.can().insertContent(suggestionText)) {
-              contentSuccess = editor.chain().insertContent(suggestionText).run();
-              console.log('insertContent run. Success:', contentSuccess);
-            } else {
-              console.warn('Cannot insertContent with the current selection/suggestion.', {
-                suggestionText,
-              });
-            }
-          } else {
-            console.warn('setTextSelection failed, not attempting insertContent.');
-          }
-
-          if (contentSuccess) {
-            console.log('All critical Tiptap chain steps reported success.');
-            // For now, we are not unsetting the mark in this debug step.
-            // It will remain on the newly inserted text if insertContent was successful.
-            setComments((prev) => {
-              console.log("Updating comment status to 'applied' for ID:", commentIdToAccept);
-              return {
-                ...prev,
-                [commentIdToAccept]: {
-                  ...prev[commentIdToAccept],
-                  status: 'applied',
-                  aiSuggestion: undefined,
-                },
-              };
-            });
-          } else {
-            console.warn(
-              'One or more Tiptap steps failed or did not report success. Content not inserted or status not updated.'
-            );
-            setComments((prev) => ({
-              ...prev,
-              [commentIdToAccept]: {
-                ...prev[commentIdToAccept],
-                status: 'error',
-                errorMessage: 'Tiptap step failed during suggestion acceptance.',
-              },
-            }));
-          }
-        } catch (tiptapError) {
-          console.error(
-            'Error during Tiptap chain execution steps in handleAcceptSuggestion:',
-            tiptapError
-          );
-          setComments((prev) => ({
-            ...prev,
-            [commentIdToAccept]: {
-              ...prev[commentIdToAccept],
-              status: 'error',
-              errorMessage: 'Tiptap error during suggestion acceptance (caught): ' + tiptapError,
-            },
-          }));
-        }
-      } else {
-        console.warn(
-          'Could not apply suggestion. Mark not found or range invalid for comment:',
-          commentIdToAccept,
-          `Details: fromPos=${fromPos}, toPos=${toPos}, docSize=${editor.state.doc.content.size}`
-        );
-        setComments((prev) => ({
-          ...prev,
-          [commentIdToAccept]: {
-            ...prev[commentIdToAccept],
-            status: 'error',
-            errorMessage: 'Failed to find text in editor to apply suggestion.',
-          },
-        }));
-      }
-    },
-    [editor, comments, setComments]
-  );
-
   const handleTriggerAIBatchProcessing = useCallback(() => {
     if (!editor || isAiLoading) return;
     const commentsToProcessArray = Object.values(comments).filter(
       (c) => c.status === 'pending' && c.instruction && c.instruction.trim() !== ''
     );
     if (commentsToProcessArray.length === 0) return;
-
     setComments((prev) => {
       const updatedComments = { ...prev };
       commentsToProcessArray.forEach((c) => {
@@ -644,50 +475,12 @@ BATCH_JSON_END
       fullDocumentWithDelineators: fullDocumentContent,
       prompts: commentsToProcessArray.map((c) => ({
         promptId: c.id,
-        instruction: c.instruction,
+        instruction: c.instruction || '',
         originalText: c.selectedText,
       })),
     };
     const stringifiedPayload = JSON.stringify(batchRequestPayload);
-    console.log('Stringified Payload (Batch Send):', stringifiedPayload);
-    const instructionToLLM = `Please process the following batch request for a text editor.
-The details of the request are in the JSON object below, marked with 'BATCH_JSON_START' and 'BATCH_JSON_END'.
-The JSON object contains:
-1. 'editorSessionId': An ID for this editing session.
-2. 'fullDocumentWithDelineators': The complete HTML content of the document. Within this HTML, sections targeted for AI processing are marked by <span data-comment-id="COMMENT_ID_HERE" class="comment-highlight">...text...</span>. The 'COMMENT_ID_HERE' corresponds to a 'promptId' in the 'prompts' array (which is the comment.id from the editor).
-3. 'prompts': An array of objects, where each object has:
-   - 'promptId': The unique identifier for a marked section in the 'fullDocumentWithDelineators' (this is the comment.id from the editor, and it matches the 'COMMENT_ID_HERE' in the span's data-comment-id attribute).
-   - 'instruction': The specific user instruction for what to do with the 'originalText'.
-   - 'originalText': The text content of the span identified by 'promptId' (Note: The AI should find the text within the span in 'fullDocumentWithDelineators' using the data-comment-id attribute matching this promptId rather than solely relying on this 'originalText' field if context is important, as 'originalText' might be stale if the document was edited after the anchor was created but before this batch submission).
-
-Your task is to:
-For each prompt in the 'prompts' array:
-  - Perform the requested 'instruction' on the text associated with its 'promptId' (found via the data-comment-id attribute in 'fullDocumentWithDelineators'), considering surrounding context.
-  - Generate a 'revisedText'.
-
-Respond with ONLY a single, valid JSON object (no other text, explanations, or markdown formatting before or after it) that follows this exact structure:
-{
-  "suggestions": [
-    {
-      "promptId": "PROMPT_ID_FROM_REQUEST",
-      "revisedText": "YOUR_SUGGESTED_REVISED_TEXT_HERE",
-      "status": "success",
-      "errorMessage": null
-    },
-    {
-      "promptId": "FAILED_PROMPT_ID",
-      "revisedText": null,
-      "status": "error",
-      "errorMessage": "Details about why processing failed for this item."
-    }
-  ]
-}
-
-BATCH_JSON_START
-${stringifiedPayload}
-BATCH_JSON_END
-`;
-    console.log('Instruction to LLM (Batch Send - final check at runtime):', instructionToLLM);
+    const instructionToLLM = `Please process the following batch request for a text editor.\nThe details of the request are in the JSON object below, marked with 'BATCH_JSON_START' and 'BATCH_JSON_END'.\nThe JSON object contains:\n1. 'editorSessionId': An ID for this editing session.\n2. 'fullDocumentWithDelineators': The complete HTML content of the document. Within this HTML, sections targeted for AI processing are marked by <span data-comment-id="COMMENT_ID_HERE" class="comment-highlight">...text...</span>. The 'COMMENT_ID_HERE' corresponds to a 'promptId' in the 'prompts' array (which is the comment.id from the editor).\n3. 'prompts': An array of objects, where each object has:\n   - 'promptId': The unique identifier for a marked section in the 'fullDocumentWithDelineators' (this is the comment.id from the editor, and it matches the 'COMMENT_ID_HERE' in the span's data-comment-id attribute).\n   - 'instruction': The specific user instruction for what to do with the 'originalText'.\n   - 'originalText': The text content of the span identified by 'promptId' (Note: The AI should find the text within the span in 'fullDocumentWithDelineators' using the data-comment-id attribute matching this promptId rather than solely relying on this 'originalText' field if context is important, as 'originalText' might be stale if the document was edited after the anchor was created but before this batch submission).\n\nYour task is to:\nFor each prompt in the 'prompts' array:\n  - Perform the requested 'instruction' on the text associated with its 'promptId' (found via the data-comment-id attribute in 'fullDocumentWithDelineators'), considering surrounding context.\n  - Generate a 'revisedText'.\n  - **Important: Write the 'revisedText' as natural text with actual line breaks, quotes, and other characters as they should appear in the final document. Do not manually escape characters - the JSON parser will handle this automatically.**\n\nRespond with ONLY a single, valid JSON object (no other text, explanations, or markdown formatting before or after it) that follows this exact structure:\n{\n  "suggestions": [\n    {\n      "promptId": "PROMPT_ID_FROM_REQUEST",\n      "revisedText": "YOUR_SUGGESTED_REVISED_TEXT_HERE",\n      "status": "success",\n      "errorMessage": null\n    },\n    {\n      "promptId": "FAILED_PROMPT_ID",\n      "revisedText": null,\n      "status": "error",\n      "errorMessage": "Details about why processing failed for this item."\n    }\n  ]\n}\n\nBATCH_JSON_START\n${stringifiedPayload}\nBATCH_JSON_END\n`;
     sendToAI({
       id: `editor-msg-${generateSimpleUUID()}`,
       role: 'user',
@@ -695,6 +488,180 @@ BATCH_JSON_END
       content: [{ type: 'text', text: instructionToLLM }],
     });
   }, [editor, isAiLoading, comments, sendToAI, setComments]);
+
+  const toggleInline = useCallback(
+    (commentId: string): void => {
+      const c = comments[commentId];
+      if (!editor || !c || !c.aiSuggestion || !c.textRange) return;
+
+      let currentFrom: number | null = null;
+      let currentTo: number | null = null;
+
+      editor.state.doc.descendants((node, pos) => {
+        if (node.isText) {
+          const mainMark = node.marks.find(
+            (m) => m.type.name === 'commentHighlight' && m.attrs.commentId === commentId
+          );
+          if (mainMark) {
+            currentFrom = pos;
+            currentTo = pos + node.nodeSize;
+            return false;
+          }
+        }
+        return true;
+      });
+
+      if (currentFrom === null || currentTo === null) {
+        console.warn(
+          `toggleInline: Could not find live range for comment ${commentId}, falling back to stored range.`
+        );
+        currentFrom = c.textRange.from;
+        currentTo = c.textRange.to;
+        if (currentFrom === null || currentTo === null) {
+          console.error('toggleInline: Stored range also null, cannot proceed.');
+          return;
+        }
+      }
+
+      if (!c.inlineVisible) {
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from: currentFrom, to: currentTo })
+          .setMark('diffDel')
+          .setTextSelection({ from: currentTo, to: currentTo })
+          .insertContent([
+            { type: 'text', text: ' ' },
+            {
+              type: 'text',
+              text: c.aiSuggestion,
+              marks: [{ type: 'diffAdd' }],
+            },
+          ])
+          .run();
+        setComments((prev) => ({
+          ...prev,
+          [commentId]: { ...prev[commentId], inlineVisible: true },
+        }));
+      } else {
+        const suggestionStartPosition = currentTo + 1;
+        const suggestionEndPosition = suggestionStartPosition + c.aiSuggestion.length;
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from: currentTo, to: suggestionEndPosition })
+          .deleteSelection()
+          .setTextSelection({ from: currentFrom, to: currentTo })
+          .unsetMark('diffDel')
+          .unsetMark('diffAdd')
+          .run();
+        setComments((prev) => ({
+          ...prev,
+          [commentId]: { ...prev[commentId], inlineVisible: false },
+        }));
+      }
+    },
+    [editor, comments, setComments]
+  );
+
+  const handleAcceptSuggestion = useCallback(
+    (commentIdToAccept: string) => {
+      const commentToApply = comments[commentIdToAccept];
+      if (
+        !editor ||
+        !commentToApply ||
+        !commentToApply.aiSuggestion ||
+        commentToApply.status !== 'suggestion_ready'
+      ) {
+        console.warn('Guard condition failed for accepting suggestion.');
+        return;
+      }
+
+      let finalFrom = commentToApply.textRange.from;
+      let finalTo = commentToApply.textRange.to;
+      let liveFrom: number | null = null;
+      let liveTo: number | null = null;
+
+      editor.state.doc.descendants((node, pos) => {
+        if (node.isText) {
+          const mainMark = node.marks.find(
+            (m) => m.type.name === 'commentHighlight' && m.attrs.commentId === commentIdToAccept
+          );
+          if (mainMark) {
+            liveFrom = pos;
+            liveTo = pos + node.nodeSize;
+            return false;
+          }
+        }
+        return true;
+      });
+
+      if (liveFrom !== null && liveTo !== null) {
+        finalFrom = liveFrom;
+        finalTo = liveTo;
+      } else {
+        console.warn(
+          `handleAcceptSuggestion: Could not find live range for comment ${commentIdToAccept}, using stored range.`
+        );
+      }
+
+      if (commentToApply.inlineVisible) {
+        const suggestionStartPosition = finalTo;
+        const suggestionEndPosition = finalTo + 1 + commentToApply.aiSuggestion.length;
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from: suggestionStartPosition, to: suggestionEndPosition })
+          .deleteSelection()
+          .setTextSelection({ from: finalFrom, to: finalTo })
+          .unsetMark('diffDel')
+          .unsetMark('diffAdd')
+          .run();
+      }
+
+      const suggestionText = commentToApply.aiSuggestion;
+      if (
+        finalFrom !== null &&
+        finalTo !== null &&
+        editor.state.doc.content.size > 0 &&
+        finalFrom < editor.state.doc.content.size &&
+        finalTo <= editor.state.doc.content.size
+      ) {
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from: finalFrom, to: finalTo })
+          .insertContent(suggestionText)
+          .setTextSelection({ from: finalFrom, to: finalFrom + suggestionText.length })
+          .unsetMark('commentHighlight')
+          .run();
+        setComments((prev) => ({
+          ...prev,
+          [commentIdToAccept]: {
+            ...prev[commentIdToAccept],
+            status: 'applied',
+            aiSuggestion: undefined,
+            instruction: prev[commentIdToAccept].instruction || '', // Add fallback to empty string
+            inlineVisible: false,
+            textRange: { from: finalFrom, to: finalFrom + suggestionText.length },
+          },
+        }));
+      } else {
+        console.warn(
+          `handleAcceptSuggestion: Range for final replacement invalid for comment ${commentIdToAccept}`
+        );
+        setComments((prev) => ({
+          ...prev,
+          [commentIdToAccept]: {
+            ...prev[commentIdToAccept],
+            status: 'error',
+            errorMessage: 'Failed to apply suggestion due to range issue.',
+          },
+        }));
+      }
+    },
+    [editor, comments, setComments]
+  );
 
   // 7. EFFECT HOOKS
   useEffect(() => {
@@ -799,12 +766,13 @@ BATCH_JSON_END
               comment={comment}
               isActive={comment.id === activeCommentId}
               currentInstructionForActive={
-                comment.id === activeCommentId ? currentInstructionInput : comment.instruction
+                comment.id === activeCommentId ? currentInstructionInput : comment.instruction || ''
               }
               onInstructionChange={handleBubbleInstructionChange}
               onSaveInstruction={handleSaveInstructionFromBubble}
               onSendToAI={handleSendIndividualCommentToAI}
               onAcceptSuggestion={handleAcceptSuggestion}
+              onToggleInline={toggleInline} // Pass the toggleInline callback
               onSetActive={handleSetActiveComment}
               onBubbleTextareaBlur={handleBubbleTextareaBlur}
               isGloballyLoadingAI={isAiLoading}

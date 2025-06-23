@@ -4,11 +4,12 @@ export interface Comment {
   id: string;
   textRange: { from: number; to: number };
   selectedText: string;
-  instruction: string;
+  instruction?: string; // Now optional to support upcoming features
   status: 'pending' | 'processing' | 'suggestion_ready' | 'applied' | 'error';
   aiSuggestion?: string;
   timestamp: Date;
   errorMessage?: string;
+  inlineVisible?: boolean;
 }
 
 export interface CommentThread {
