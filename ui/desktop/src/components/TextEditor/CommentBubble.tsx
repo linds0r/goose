@@ -10,8 +10,10 @@ interface CommentBubbleProps {
   onSendToAI: (commentId: string) => void; // For individual submission
   onAcceptSuggestion: (commentId: string) => void;
   onSetActive: (commentId: string | null) => void; // To make this bubble active
-  onBubbleTextareaBlur: () => void; // New: To signal focus has left the textarea
+  onBubbleTextareaBlur: () => void; // To signal focus has left the textarea
   isGloballyLoadingAI: boolean; // Global AI loading state
+  onCloseComment: (commentId: string) => void; // New prop for closing
+  style?: React.CSSProperties; // Optional style prop from TextEditorView for positioning
 }
 
 const CommentBubble: React.FC<CommentBubbleProps> = ({
@@ -23,8 +25,10 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
   onSendToAI,
   onAcceptSuggestion,
   onSetActive,
-  onBubbleTextareaBlur, // New
+  onBubbleTextareaBlur,
   isGloballyLoadingAI,
+  onCloseComment, // Destructure new prop
+  style, // Destructure style prop
 }) => {
   // Diagnostic log
   console.log(
@@ -43,16 +47,26 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
     }
   };
 
-  const handleInstructionSave = () => {
+  const handleInstructionSave = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent bubble activation
     onSaveInstruction(comment.id);
   };
 
-  const handleSendToAISingle = () => {
+  const handleSendToAISingle = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent bubble activation
     onSendToAI(comment.id);
   };
 
-  const handleSuggestionAccept = () => {
+  const handleSuggestionAccept = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent bubble activation
     onAcceptSuggestion(comment.id);
+  };
+
+  const handleBubbleClick = () => {
+    // Only activate if not already active to avoid unnecessary re-renders or logic firing
+    if (!isActive) {
+      onSetActive(comment.id);
+    }
   };
 
   return (
@@ -65,23 +79,53 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
         marginBottom: '12px',
         backgroundColor: '#ffffff',
         boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.15)' : '0 1px 3px rgba(0,0,0,0.1)',
-        cursor: 'pointer', // Make the whole bubble clickable to activate
+        cursor: 'pointer',
+        position: 'relative', // Added for positioning the close button
+        ...style, // Spread the style prop for absolute positioning from parent
       }}
-      onClick={() => onSetActive(comment.id)} // Activate on click
+      onClick={handleBubbleClick}
     >
-      <div style={{ marginBottom: '8px' }}>
+      <button
+        onClick={(e) => {
+          e.stopPropagation(); // Prevent the bubble's onClick from firing
+          onCloseComment(comment.id);
+        }}
+        aria-label="Close comment"
+        style={{
+          position: 'absolute',
+          top: '8px',
+          right: '8px',
+          background: 'none',
+          border: 'none',
+          fontSize: '1.2rem',
+          fontWeight: 'bold',
+          color: '#888',
+          cursor: 'pointer',
+          padding: '0 5px',
+          lineHeight: '1',
+          zIndex: 1, // Ensure it's above other content if necessary
+        }}
+      >
+        &times;
+      </button>
+
+      <div style={{ marginBottom: '8px', paddingRight: '20px' /* Make space for close button */ }}>
         <strong style={{ display: 'block', fontSize: '0.9em', color: '#333' }}>
           Selected: "{comment.selectedText}"
         </strong>
-        <span style={{ fontSize: '0.75em', color: '#777' }}>ID: {comment.id}</span>
+        <span style={{ fontSize: '0.75em', color: '#777' }}>ID: {comment.id.substring(0, 6)}</span>
       </div>
 
       {canEditInstruction && (
         <textarea
           value={isActive ? currentInstructionForActive : comment.instruction}
-          onChange={(e) => onInstructionChange(e.target.value)}
-          onFocus={handleTextareaFocus} // Also activate if textarea is directly focused
-          onBlur={onBubbleTextareaBlur} // Added onBlur handler
+          onChange={(e) => {
+            // e.stopPropagation(); // Not strictly needed here but good practice if it could bubble
+            onInstructionChange(e.target.value);
+          }}
+          onFocus={handleTextareaFocus}
+          onBlur={onBubbleTextareaBlur}
+          onClick={(e) => e.stopPropagation()} // Prevent bubble click when interacting with textarea
           placeholder="Type your AI instruction..."
           rows={3}
           style={{
@@ -104,6 +148,7 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
             padding: '8px',
             background: '#f0f0f0',
             borderRadius: '4px',
+            wordBreak: 'break-word',
           }}
         >
           <strong>Instruction:</strong> {comment.instruction}
@@ -129,9 +174,7 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
           Status: {comment.status}
         </span>
         <div style={{ display: 'flex', gap: '8px' }}>
-          {' '}
-          {/* Container for buttons */}
-          {canEditInstruction && ( // Show Save only when instruction can be edited
+          {canEditInstruction && (
             <button
               onClick={handleInstructionSave}
               disabled={
@@ -144,27 +187,24 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
               Save
             </button>
           )}
-          {comment.status === 'pending' &&
-            canSendToAI && ( // Show Send to AI only if pending and instruction is present
-              <button
-                onClick={handleSendToAISingle}
-                disabled={isGloballyLoadingAI || isThisCommentProcessing} // canSendToAI already checks for instruction
-                style={{
-                  padding: '6px 10px',
-                  fontSize: '0.85em',
-                  backgroundColor: '#28a745',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                }}
-              >
-                {isThisCommentProcessing ? 'Processing...' : 'Send'} {/* Shorter text for button */}
-              </button>
-            )}
+          {comment.status === 'pending' && canSendToAI && (
+            <button
+              onClick={handleSendToAISingle}
+              disabled={isGloballyLoadingAI || isThisCommentProcessing}
+              style={{
+                padding: '6px 10px',
+                fontSize: '0.85em',
+                backgroundColor: '#28a745',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+              }}
+            >
+              {isThisCommentProcessing ? 'Processing...' : 'Send'}
+            </button>
+          )}
         </div>
       </div>
-
-      {/* Old full-width Send to AI button removed as it's integrated above */}
 
       {canAcceptSuggestion && comment.aiSuggestion && (
         <div style={{ marginTop: '10px', borderTop: '1px dashed #eee', paddingTop: '10px' }}>
@@ -180,6 +220,7 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
               maxHeight: '120px',
               overflowY: 'auto',
               marginBottom: '8px',
+              wordBreak: 'break-word',
             }}
           >
             {comment.aiSuggestion}
