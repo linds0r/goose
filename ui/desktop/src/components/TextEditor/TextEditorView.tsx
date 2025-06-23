@@ -10,6 +10,7 @@ import { useMessageStream } from '../../hooks/useMessageStream';
 import { getApiUrl } from '../../config';
 import type { Message } from '../../types/message'; // Using type import for Message
 import { Comment } from './DocumentTypes';
+import CommentBubble from './CommentBubble'; // Added import for CommentBubble
 
 const generateSimpleUUID = () => `id-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
@@ -52,6 +53,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
   const [currentInstructionInput, setCurrentInstructionInput] = useState<string>('');
   const [isInteractionPanelVisible, setIsInteractionPanelVisible] = useState<boolean>(false);
+  const [isBubbleFocused, setIsBubbleFocused] = useState<boolean>(false); // New state
 
   const editorSessionIdRef = useRef<string>(`text-editor-session-${generateSimpleUUID()}`);
 
@@ -73,13 +75,123 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
 
     setActiveCommentId(commentId);
     setCurrentInstructionInput('');
-    setIsInteractionPanelVisible(true);
-    // Consider if focusing the editor or a specific input is desired here
+    setIsInteractionPanelVisible(false); // Hide old panel when a new comment is made via toolbar for bubble UI
     console.log(
       'Comment highlight applied via callback and comment object created:',
       commentId,
       selectionDetails
     );
+  };
+
+  const handleSetActiveComment = (commentId: string | null) => {
+    setActiveCommentId(commentId);
+    if (commentId && comments[commentId]) {
+      setCurrentInstructionInput(comments[commentId].instruction || '');
+      setIsInteractionPanelVisible(false); // Ensure old panel is hidden
+      setIsBubbleFocused(true); // Bubble is now the focus of interaction
+    } else {
+      setCurrentInstructionInput('');
+      setIsBubbleFocused(false); // No bubble is active/focused
+    }
+  };
+
+  const handleBubbleInstructionChange = (newInstruction: string) => {
+    setCurrentInstructionInput(newInstruction);
+  };
+
+  const handleBubbleTextareaBlur = () => {
+    setIsBubbleFocused(false);
+  };
+
+  const handleSendIndividualCommentToAI = (commentId: string) => {
+    if (!editor || isAiLoading || !comments[commentId]) {
+      console.warn(
+        'Editor not ready, AI loading, or comment not found for individual send:',
+        commentId
+      );
+      return;
+    }
+
+    const commentToSend = comments[commentId];
+    if (
+      !(
+        commentToSend.status === 'pending' &&
+        commentToSend.instruction &&
+        commentToSend.instruction.trim() !== ''
+      )
+    ) {
+      console.warn(
+        'Comment not in a state to be sent to AI or no instruction:',
+        commentId,
+        commentToSend.status
+      );
+      return;
+    }
+
+    setComments((prev) => ({
+      ...prev,
+      [commentId]: { ...prev[commentId], status: 'processing' },
+    }));
+
+    const fullDocumentContent = editor.getHTML();
+    const batchRequestPayload: AIBatchTextRevisionRequest = {
+      editorSessionId: editorSessionIdRef.current,
+      fullDocumentWithDelineators: fullDocumentContent,
+      prompts: [
+        {
+          promptId: commentToSend.id,
+          instruction: commentToSend.instruction,
+          originalText: commentToSend.selectedText,
+        },
+      ],
+    };
+
+    const stringifiedPayload = JSON.stringify(batchRequestPayload);
+    // Re-use the same detailed instruction string used for batch processing
+    const instructionToLLM = `Please process the following batch request for a text editor.
+The details of the request are in the JSON object below, marked with 'BATCH_JSON_START' and 'BATCH_JSON_END'.
+The JSON object contains:
+1. 'editorSessionId': An ID for this editing session.
+2. 'fullDocumentWithDelineators': The complete HTML content of the document. Within this HTML, sections targeted for AI processing are marked by <span data-comment-id="COMMENT_ID_HERE" class="comment-highlight">...text...</span>. The 'COMMENT_ID_HERE' corresponds to a 'promptId' in the 'prompts' array (which is the comment.id from the editor).
+3. 'prompts': An array of objects, where each object has:
+   - 'promptId': The unique identifier for a marked section in the 'fullDocumentWithDelineators' (this is the comment.id from the editor, and it matches the 'COMMENT_ID_HERE' in the span's data-comment-id attribute).
+   - 'instruction': The specific user instruction for what to do with the 'originalText'.
+   - 'originalText': The text content of the span identified by 'promptId' (Note: The AI should find the text within the span in 'fullDocumentWithDelineators' using the data-comment-id attribute matching this promptId rather than solely relying on this 'originalText' field if context is important, as 'originalText' might be stale if the document was edited after the anchor was created but before this batch submission).
+
+Your task is to:
+For each prompt in the 'prompts' array:
+  - Perform the requested 'instruction' on the text associated with its 'promptId' (found via the data-comment-id attribute in 'fullDocumentWithDelineators'), considering surrounding context.
+  - Generate a 'revisedText'.
+
+Respond with ONLY a single, valid JSON object (no other text, explanations, or markdown formatting before or after it) that follows this exact structure:
+{
+  "suggestions": [
+    {
+      "promptId": "PROMPT_ID_FROM_REQUEST",
+      "revisedText": "YOUR_SUGGESTED_REVISED_TEXT_HERE",
+      "status": "success",
+      "errorMessage": null
+    },
+    {
+      "promptId": "FAILED_PROMPT_ID",
+      "revisedText": null,
+      "status": "error",
+      "errorMessage": "Details about why processing failed for this item."
+    }
+  ]
+}
+
+BATCH_JSON_START
+${stringifiedPayload}
+BATCH_JSON_END
+`;
+    console.log(`Attempting to send single comment (id: ${commentId}) to AI.`, instructionToLLM);
+    sendToAI({
+      id: `editor-msg-${generateSimpleUUID()}`,
+      role: 'user',
+      created: Date.now(),
+      content: [{ type: 'text', text: instructionToLLM }],
+    });
   };
 
   const handleAIBatchResponse = (aiResponseObject: Message, reason: string) => {
@@ -248,32 +360,34 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
     },
     onSelectionUpdate: ({ editor: currentEditor }: { editor: Editor }) => {
       const { selection } = currentEditor.state;
-      const isActiveHighlight = currentEditor.isActive('commentHighlight');
+      const isActiveHighlightInDocument = currentEditor.isActive('commentHighlight');
 
-      if (isActiveHighlight && !selection.empty) {
+      if (isActiveHighlightInDocument && !selection.empty) {
         const attrs = currentEditor.getAttributes('commentHighlight');
-        const currentCommentId = attrs.commentId as string;
+        const commentIdFromDocument = attrs.commentId as string;
 
-        if (currentCommentId && comments[currentCommentId]) {
-          // An existing comment highlight is selected, load its data for the panel
-          setActiveCommentId(currentCommentId);
-          setCurrentInstructionInput(comments[currentCommentId].instruction || '');
-          setIsInteractionPanelVisible(true);
-        } else if (currentCommentId && !comments[currentCommentId]) {
-          // A highlight mark exists but its comment data is missing in state.
-          // This might indicate an orphaned mark or a state inconsistency.
+        if (commentIdFromDocument && comments[commentIdFromDocument]) {
+          if (activeCommentId !== commentIdFromDocument) {
+            handleSetActiveComment(commentIdFromDocument);
+          }
+        } else if (commentIdFromDocument && !comments[commentIdFromDocument]) {
           console.warn(
-            `Orphaned commentHighlight mark detected with ID: ${currentCommentId}. Clearing active state.`
+            `onSelectionUpdate: Orphaned commentHighlight mark: ${commentIdFromDocument}.`
           );
-          setActiveCommentId(null);
-          setIsInteractionPanelVisible(false); // Hide panel if inconsistent state detected
+          handleSetActiveComment(null);
         }
-        // If currentCommentId is null/undefined from attrs, do nothing (should not happen if isActiveHighlight is true)
       } else {
-        // If no highlight is active, or selection is empty, consider if panel should be hidden.
-        // For now, only explicit actions (like cancel button) will hide the panel.
-        // setActiveCommentId(null); // Optionally clear active ID if nothing is highlighted
-        // setIsInteractionPanelVisible(false); // Optionally hide panel
+        // No highlight is active in the document selection.
+        // Temporarily disabling the deactivation logic here for diagnostics.
+        // if (activeCommentId && editor && editor.isFocused && !isBubbleFocused) {
+        //   console.log("onSelectionUpdate: Editor focused, no highlight, bubble not focused. Clearing active bubble. (LOGIC DISABLED)");
+        //   handleSetActiveComment(null);
+        // }
+        if (activeCommentId && editor && editor.isFocused && !isBubbleFocused) {
+          console.log(
+            'onSelectionUpdate: else condition met (activeCommentId && editor.isFocused && !isBubbleFocused). Deactivation is currently commented out.'
+          );
+        }
       }
     },
   });
@@ -382,27 +496,35 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         'Could not find the CommentHighlightMark in the document for comment.id:',
         commentIdToAccept
       );
-      /* ---- TEMPORARILY COMMENTED OUT FOR DEBUGGING TS2367 ----
-      if (commentToApply.status !== 'applied') { 
-        setComments((prev) => ({
-          ...prev,
-          [commentIdToAccept]: {
-            ...prev[commentIdToAccept],
-            status: 'error',
-            errorMessage: 'Failed to find text in editor to apply suggestion. Text might have been altered or deleted.',
-          },
-        }));
-      }
-      */ // ---- END OF TEMPORARY COMMENT ----
+      // At this point, commentToApply is defined and its status is 'suggestion_ready'.
+      // We set its status to 'error' because we couldn't find the mark to apply the suggestion.
+      setComments((prev) => ({
+        ...prev,
+        [commentIdToAccept]: {
+          ...prev[commentIdToAccept],
+          status: 'error',
+          errorMessage:
+            'Failed to find text in editor to apply suggestion. Text might have been altered or deleted.',
+        },
+      }));
     }
   };
 
   useEffect(() => {
     if (activeCommentId && comments[activeCommentId] && isInteractionPanelVisible) {
+      // This part might still be relevant if the old panel is ever used for an active comment
       setCurrentInstructionInput(comments[activeCommentId].instruction || '');
     } else if (!isInteractionPanelVisible) {
-      setActiveCommentId(null); // Clear active comment when panel is hidden
-      setCurrentInstructionInput('');
+      // setActiveCommentId(null); // <<< TEMPORARILY COMMENTED OUT
+      console.log(
+        'useEffect: Old panel not visible. Previously would have cleared activeCommentId. Current activeCommentId:',
+        activeCommentId
+      );
+      // We might still want to clear currentInstructionInput if the panel is hidden and no bubble is active
+      if (!activeCommentId) {
+        // Only clear if no bubble is meant to be active
+        setCurrentInstructionInput('');
+      }
     }
   }, [activeCommentId, comments, isInteractionPanelVisible]);
 
@@ -473,8 +595,6 @@ Respond with ONLY a single, valid JSON object (no other text, explanations, or m
       "status": "success",
       "errorMessage": null
     },
-    // ... more suggestion objects ...
-    // If processing for a specific promptId fails, return it with status: "error" and an errorMessage.
     {
       "promptId": "FAILED_PROMPT_ID",
       "revisedText": null,
@@ -526,21 +646,92 @@ BATCH_JSON_END
   }
 
   return (
-    <div className="text-editor-container" style={{ paddingTop: '38px' }}>
+    // 1. Modify the outermost div for flex column layout and full height
+    <div
+      className="text-editor-container"
+      style={{
+        paddingTop: '38px',
+        display: 'flex',
+        flexDirection: 'column',
+        height: 'calc(100vh - 38px)', // Assuming 38px is toolbar height; adjust if not
+      }}
+    >
       {getToolbar()}
-      <EditorContent editor={editor} className="editor-content-area" />
+      {/* 2. Add a new wrapper div for the editor and comments sidebar (flex row) */}
+      <div style={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
+        {/* 3. Wrap EditorContent in its own div for sizing and relative positioning */}
+        <div style={{ flexGrow: 1, overflowY: 'auto', position: 'relative' }}>
+          <EditorContent editor={editor} className="editor-content-area" />
+        </div>
+        {/* 4. Add the new comments-sidebar div */}
+        <div
+          className="comments-sidebar"
+          style={{
+            width: '350px', // Adjust width as needed
+            borderLeft: '1px solid #ddd',
+            padding: '15px',
+            overflowY: 'auto',
+            backgroundColor: '#f8f9fa',
+          }}
+        >
+          <h4
+            style={{
+              marginTop: '0',
+              marginBottom: '15px',
+              borderBottom: '1px solid #eee',
+              paddingBottom: '10px',
+            }}
+          >
+            Comments
+          </h4>
+          {Object.keys(comments).length === 0 && (
+            <p style={{ color: '#6c757d', fontSize: '0.9em' }}>
+              No comments yet. Select text and use the toolbar to add a comment.
+            </p>
+          )}
+          {Object.values(comments).map((comment) => (
+            <CommentBubble
+              key={comment.id}
+              comment={comment}
+              isActive={comment.id === activeCommentId}
+              currentInstructionForActive={
+                comment.id === activeCommentId ? currentInstructionInput : comment.instruction
+              }
+              onInstructionChange={handleBubbleInstructionChange}
+              onSaveInstruction={handleSaveInstruction}
+              onSendToAI={handleSendIndividualCommentToAI}
+              onAcceptSuggestion={handleAcceptSuggestion}
+              onSetActive={handleSetActiveComment}
+              onBubbleTextareaBlur={handleBubbleTextareaBlur} // Added new prop
+              isGloballyLoadingAI={isAiLoading}
+            />
+          ))}
+        </div>{' '}
+        {/* End of comments-sidebar */}
+      </div>{' '}
+      {/* End of main content area (editor + comments) wrapper */}
+      {/* 5. Adjust or manage the old interaction panel */}
+      {/* For now, let's adjust its style to avoid overlapping too much,
+        but its visibility logic might need to change soon. */}
       {isInteractionPanelVisible && activeCommentId && comments[activeCommentId] && (
         <div
-          className="ai-prompt-input-area"
+          className="ai-prompt-input-area" // Old panel
           style={{
             padding: '15px',
             borderTop: '1px solid #ddd',
             background: '#f9f9f9',
-            marginTop: '10px',
-            position: 'relative',
+            // Changed from relative to fixed to overlay or be managed separately
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            // Make it not overlap the new sidebar. Adjust '350px' if sidebar width changes.
+            right: '350px',
             zIndex: 20,
+            maxHeight: '40%', // Limit its height
+            overflowY: 'auto',
           }}
         >
+          {/* ... content of old panel ... (this remains the same for now) */}
           <button
             onClick={handleCancelInteraction}
             style={{
@@ -574,8 +765,7 @@ BATCH_JSON_END
           >
             Original Text: <strong>"{comments[activeCommentId]?.selectedText}"</strong>
           </div>
-          {/* Only show instruction input based on refined logic */}
-          {shouldShowInstructionArea && (
+          {shouldShowInstructionArea /* This uses your corrected logic */ && (
             <>
               <textarea
                 value={currentInstructionInput}
@@ -616,7 +806,6 @@ BATCH_JSON_END
           {comments[activeCommentId]?.status === 'processing' && (
             <span style={{ fontStyle: 'italic' }}>Processing with AI...</span>
           )}
-
           {comments[activeCommentId]?.status === 'suggestion_ready' &&
             comments[activeCommentId]?.aiSuggestion && (
               <div style={{ marginTop: '15px', borderTop: '1px dashed #ccc', paddingTop: '10px' }}>
@@ -666,7 +855,7 @@ BATCH_JSON_END
           </p>
         </div>
       )}
-    </div>
+    </div> // End of outermost div
   );
 };
 
