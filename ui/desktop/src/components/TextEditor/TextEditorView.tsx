@@ -223,10 +223,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
   );
 
   const handleAIBatchResponse = useCallback(
-    (aiResponseObject: Message, reason: string, currentEditorInstance?: Editor | null) => {
-      console.log('AI Batch Response Received by onFinish:', aiResponseObject, 'Reason:', reason);
-      console.log('Response metadata:', aiResponseObject.metadata);
-      
+    (aiResponseObject: Message, _reason: string, currentEditorInstance?: Editor | null) => {
       // Get the response text content
       const rawTextContent = aiResponseObject?.content?.[0]?.type === 'text' ? aiResponseObject.content[0].text : '';
       
@@ -241,32 +238,18 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       // If metadata is missing but content looks conversational, we need to find the commentId differently
       // This is a fallback for when metadata gets lost in the pipeline
       if (isThreadReply || (isLikelyConversational && !metadata)) {
-        console.log('✅ THREAD REPLY DETECTED - Processing as conversational text');
-        console.log('Detection method:', isThreadReply ? 'metadata' : 'content analysis (metadata missing)');
-        
         // Handle thread reply response - expect conversational text, not JSON
         let commentId = metadata?.commentId;
         
         // If we don't have commentId from metadata, we need to find it another way
         // Look for comments that have pending replies (indicating an active thread conversation)
         if (!commentId && isLikelyConversational) {
-          console.log('🔍 Searching for commentId. Current comments:', Object.keys(comments));
-          console.log('🔍 Comments with replies:', Object.values(comments).map(c => ({ 
-            id: c.id, 
-            repliesCount: c.replies?.length || 0, 
-            pendingReplies: c.replies?.filter(r => r.status === 'pending').length || 0,
-            lastActivity: c.lastActivity 
-          })));
-          
           const commentsWithPendingReplies = Object.values(comments).filter(comment => 
             comment.replies && comment.replies.some(reply => reply.status === 'pending')
           );
           
-          console.log('🔍 Found comments with pending replies:', commentsWithPendingReplies.length);
-          
           if (commentsWithPendingReplies.length === 1) {
             commentId = commentsWithPendingReplies[0].id;
-            console.log('🔍 Found commentId from pending replies:', commentId);
           } else if (commentsWithPendingReplies.length > 1) {
             // If multiple pending, use the most recent one
             const mostRecent = commentsWithPendingReplies.reduce((latest, current) => {
@@ -275,9 +258,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
               return currentActivity > latestActivity ? current : latest;
             });
             commentId = mostRecent.id;
-            console.log('🔍 Found commentId from most recent pending reply:', commentId);
           } else {
-            console.log('🔍 No comments with pending replies found, checking all comments with replies...');
             // Fallback: look for any comment with replies (maybe status got updated already)
             const commentsWithAnyReplies = Object.values(comments).filter(comment => 
               comment.replies && comment.replies.length > 0
@@ -289,23 +270,18 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
                 return currentActivity > latestActivity ? current : latest;
               });
               commentId = mostRecent.id;
-              console.log('🔍 Found commentId from most recent comment with replies:', commentId);
             } else {
-              console.log('🔍 No comments with replies found, using the only available comment...');
               // Final fallback: if there's only one comment and we're getting a conversational response,
               // it's very likely meant for that comment
               const allComments = Object.values(comments);
               if (allComments.length === 1) {
                 commentId = allComments[0].id;
-                console.log('🔍 Using single available comment:', commentId);
               }
             }
           }
         }
         
         const aiReplyText = rawTextContent;
-        
-        console.log('Thread reply details:', { commentId, aiReplyTextLength: aiReplyText?.length });
         
         if (commentId && aiReplyText) {
           const aiReply: Reply = {
@@ -333,23 +309,17 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
             }
             return updated;
           });
-          console.log('✅ Thread reply processed successfully for comment:', commentId);
         } else {
-          console.error('❌ Thread reply missing commentId or aiReplyText:', { commentId, aiReplyText: aiReplyText?.substring(0, 100) + '...' });
           // Even if we can't find the commentId, don't try to parse as JSON
-          console.log('✅ EXITING EARLY - Avoiding JSON parsing for conversational text');
           return;
         }
-        console.log('✅ EXITING EARLY - Thread reply complete');
         return; // Exit early for thread replies - don't process as JSON
       }
       
       // Continue with existing batch response logic for non-thread requests
-      console.log('🔄 Processing batch/regular response as JSON');
       let parsedResponse: AIBatchTextRevisionResponse | null = null;
 
       if (rawTextContent) {
-        console.log('🔍 About to attempt JSON parsing for non-thread response');
         try {
           const jsonRegex = new RegExp('```json\\s*([\\s\\S]*?)\\s*```');
           const match = rawTextContent.match(jsonRegex);
@@ -707,8 +677,6 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
 
   // NEW: Thread management functions
   const handleSendReply = useCallback(async (commentId: string, replyText: string) => {
-    console.log('🔄 handleSendReply called:', { commentId, replyText: replyText.substring(0, 50) + '...' });
-    
     if (!replyText.trim()) return;
     
     // Add user reply to thread immediately
@@ -720,21 +688,15 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       status: 'pending'
     };
     
-    console.log('🔄 Adding user reply:', userReply);
-    
     setComments(prev => {
       const updated = { ...prev };
       if (updated[commentId]) {
-        console.log('🔄 Comment found, adding reply. Current replies:', updated[commentId].replies?.length || 0);
         updated[commentId] = {
           ...updated[commentId],
           replies: [...(updated[commentId].replies || []), userReply],
           lastActivity: new Date(),
           isThreadExpanded: true  // Auto-expand when new reply added
         };
-        console.log('🔄 After adding reply, replies count:', updated[commentId].replies.length);
-      } else {
-        console.error('🔄 Comment not found for ID:', commentId);
       }
       return updated;
     });
