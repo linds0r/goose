@@ -9,6 +9,7 @@ import { View, ViewOptions } from '../../App';
 import CommentHighlightMark from './extensions/CommentHighlightMark';
 import StrikethroughDiffMark from './extensions/StrikethroughDiffMark';
 import BoldItalicAddMark from './extensions/BoldItalicAddMark';
+import { GoogleDocsEnterBehavior } from './extensions/GoogleDocsEnterBehavior';
 import { useMessageStream } from '../../hooks/useMessageStream';
 import { getApiUrl } from '../../config';
 import type { Message } from '../../types/message';
@@ -182,11 +183,48 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
   const editorSessionIdRef = useRef<string>(`text-editor-session-${generateSimpleUUID()}`);
 
   const editor = useEditor({
-    extensions: [StarterKit, CommentHighlightMark, StrikethroughDiffMark, BoldItalicAddMark],
+    extensions: [
+      StarterKit.configure({
+        // Configure paragraph behavior to match Google Docs
+        paragraph: {
+          HTMLAttributes: {
+            class: 'google-docs-paragraph',
+          },
+        },
+        // Configure heading behavior
+        heading: {
+          levels: [1, 2, 3, 4, 5, 6],
+          HTMLAttributes: {
+            class: 'google-docs-heading',
+          },
+        },
+        // Configure list behavior
+        bulletList: {
+          HTMLAttributes: {
+            class: 'google-docs-bullet-list',
+          },
+        },
+        orderedList: {
+          HTMLAttributes: {
+            class: 'google-docs-ordered-list',
+          },
+        },
+        // Configure blockquote behavior
+        blockquote: {
+          HTMLAttributes: {
+            class: 'google-docs-blockquote',
+          },
+        },
+      }),
+      CommentHighlightMark,
+      StrikethroughDiffMark,
+      BoldItalicAddMark,
+      GoogleDocsEnterBehavior,
+    ],
     content: `<h2>Goose Text Editor</h2><p>Create documents with integrated AI using comment bubbles instead of a chatbot.</p><p><strong>Using the AI:</strong></p><p>To use the AI assistant, simply write your content in the document and add comments where you want AI help. When you add a comment, you can ask the AI to generate new content, revise existing text, or provide suggestions for that specific location. The AI will respond within the comment bubble, and you can choose whether to keep, modify, or delete both your original text and the AI's suggestions. You have full control over what stays in your document.</p><p><strong>Using AI for Revision:</strong></p><ol><li><strong>Select Text:</strong> Highlight text for AI revision.</li><li><strong>Add Comment:</strong> Attach your instruction (e.g., "Shorten," "Make persuasive").</li><li><strong>Process & Review:</strong><ul><li>Submit comments.</li><li>AI suggestions appear in the comment bubble.</li><li>Preview with "Show Inline": <s>original text</s>, <strong><em>new text</em></strong>.</li><li>Click "Apply" to accept.</li></ul></li></ol><p>Try it out the comment feature on this text, or start typing your own content!</p>`,
     editorProps: {
       attributes: {
-        class: 'prose prose-sm sm:prose lg:prose-lg xl:prose-2xl m-5 focus:outline-none',
+        class: 'google-docs-editor focus:outline-none',
       },
     },
     onSelectionUpdate: ({ editor: currentEditor }: { editor: Editor }) => {

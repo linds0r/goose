@@ -46,8 +46,110 @@
 
 .editor-content-area {
   flex-grow: 1;
-  padding: 16px;
+  padding: 0;
   overflow-y: auto;
+  background-color: #ffffff;
+}
+
+/* Google Docs-like Editor Styling */
+.google-docs-editor {
+  min-height: calc(100vh - 200px);
+  outline: none;
+  padding: 48px 96px; /* Google Docs-like margins */
+  max-width: none;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Similar to Google Docs */
+  font-size: 11pt; /* Google Docs default */
+  line-height: 1.15; /* Google Docs line height */
+  color: #202124; /* Google Docs text color */
+  background-color: white;
+  margin: 0 auto;
+  box-shadow: 0 0 0 0.75pt #d1d5db; /* Subtle document border */
+}
+
+/* Google Docs-like paragraph spacing */
+.google-docs-editor p {
+  margin: 0 0 0 0; /* No automatic spacing between paragraphs */
+  padding: 0;
+  line-height: 1.15;
+}
+
+/* Only add spacing when user explicitly presses Enter twice */
+.google-docs-editor p + p {
+  margin-top: 0; /* No automatic spacing */
+}
+
+/* Google Docs-like heading styles */
+.google-docs-editor h1 {
+  font-size: 20pt;
+  font-weight: 400;
+  margin: 20pt 0 6pt 0;
+  color: #202124;
+}
+
+.google-docs-editor h2 {
+  font-size: 16pt;
+  font-weight: 400;
+  margin: 18pt 0 6pt 0;
+  color: #202124;
+}
+
+.google-docs-editor h3 {
+  font-size: 14pt;
+  font-weight: 400;
+  margin: 16pt 0 4pt 0;
+  color: #202124;
+}
+
+.google-docs-editor h4 {
+  font-size: 12pt;
+  font-weight: 400;
+  margin: 14pt 0 4pt 0;
+  color: #202124;
+}
+
+.google-docs-editor h5 {
+  font-size: 11pt;
+  font-weight: 400;
+  margin: 12pt 0 4pt 0;
+  color: #202124;
+}
+
+.google-docs-editor h6 {
+  font-size: 11pt;
+  font-weight: 400;
+  margin: 10pt 0 4pt 0;
+  color: #202124;
+}
+
+/* Google Docs-like list styling */
+.google-docs-editor ul, .google-docs-editor ol {
+  margin: 0 0 0 0;
+  padding-left: 48pt; /* Google Docs indent */
+}
+
+.google-docs-editor li {
+  margin: 0;
+  padding: 0;
+  line-height: 1.15;
+}
+
+/* Google Docs-like blockquote */
+.google-docs-editor blockquote {
+  margin: 0 0 0 0;
+  padding-left: 36pt;
+  border-left: none;
+  font-style: italic;
+}
+
+/* Selection styling similar to Google Docs */
+.google-docs-editor ::selection {
+  background-color: #4285f4;
+  color: white;
+}
+
+/* Cursor styling */
+.google-docs-editor .ProseMirror-focused {
+  outline: none;
 }
 
 /* Basic TipTap ProseMirror editor styling (can be adjusted) */

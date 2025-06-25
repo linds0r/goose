@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Comment } from './DocumentTypes';
+import ThreadReply from './ThreadReply';
+import './ThreadStyles.css';
 
 interface CommentBubbleProps {
   comment: Comment;
@@ -14,6 +16,9 @@ interface CommentBubbleProps {
   onBubbleTextareaBlur: () => void;
   isGloballyLoadingAI: boolean;
   onCloseComment: (commentId: string) => void;
+  // NEW: Thread-related props
+  onSendReply?: (commentId: string, replyText: string) => void;
+  onToggleThread?: (commentId: string) => void;
   style?: React.CSSProperties;
 }
 
@@ -30,8 +35,13 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
   onBubbleTextareaBlur,
   isGloballyLoadingAI,
   onCloseComment,
+  onSendReply,
+  onToggleThread,
   style,
 }) => {
+  const [replyText, setReplyText] = useState('');
+  const [isReplying, setIsReplying] = useState(false);
+  
   const isThisCommentProcessing = comment.status === 'processing';
   const canEditInstruction = comment.status === 'pending' || comment.status === 'error';
   const canSendToAI =
@@ -63,6 +73,20 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
   const handleBubbleClick = () => {
     if (!isActive) {
       onSetActive(comment.id);
+    }
+  };
+
+  // NEW: Thread handling functions
+  const handleSendReply = () => {
+    if (!replyText.trim() || !onSendReply) return;
+    onSendReply(comment.id, replyText.trim());
+    setReplyText('');
+    setIsReplying(false);
+  };
+
+  const handleToggleThread = () => {
+    if (onToggleThread) {
+      onToggleThread(comment.id);
     }
   };
 
@@ -202,6 +226,22 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
       {canAcceptSuggestion && comment.aiSuggestion && (
         <div style={{ marginTop: '10px', borderTop: '1px dashed #eee', paddingTop: '10px' }}>
           <h5 style={{ margin: '0 0 5px 0', fontSize: '0.9em' }}>AI Suggestion:</h5>
+          
+          {/* NEW: Show explanation if available */}
+          {comment.explanation && (
+            <div style={{ 
+              background: '#f8f9fa', 
+              padding: '8px', 
+              borderRadius: '4px', 
+              fontSize: '0.85em',
+              marginBottom: '8px',
+              fontStyle: 'italic',
+              color: '#6c757d'
+            }}>
+              <strong>AI's reasoning:</strong> {comment.explanation}
+            </div>
+          )}
+          
           <div
             style={{
               background: '#e6f7ff',
@@ -262,6 +302,104 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
           Suggestion Applied!
         </p>
       )}
+      
+      {/* NEW: Thread section */}
+      {comment.replies && comment.replies.length > 0 && (
+        <div className="thread-section" style={{ marginTop: '12px', borderTop: '1px solid #e5e7eb', paddingTop: '8px' }}>
+          <button 
+            onClick={handleToggleThread}
+            className="thread-toggle"
+            style={{
+              fontSize: '12px',
+              color: '#6b7280',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px 0'
+            }}
+          >
+            {comment.isThreadExpanded ? 'Hide' : 'Show'} replies ({comment.replies.length})
+          </button>
+          
+          {comment.isThreadExpanded && (
+            <div className="thread-replies" style={{ marginTop: '8px', maxHeight: '300px', overflowY: 'auto' }}>
+              {comment.replies.map(reply => (
+                <ThreadReply key={reply.id} reply={reply} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* NEW: Reply input section */}
+      <div className="reply-section" style={{ marginTop: '8px', borderTop: '1px solid #f3f4f6', paddingTop: '8px' }}>
+        {isReplying ? (
+          <div className="reply-input" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <textarea
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              placeholder="Ask AI for clarification or add your thoughts..."
+              className="reply-textarea"
+              style={{
+                minHeight: '60px',
+                padding: '8px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '13px',
+                resize: 'vertical'
+              }}
+            />
+            <div className="reply-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={handleSendReply}
+                disabled={!replyText.trim() || isGloballyLoadingAI}
+                style={{
+                  padding: '4px 12px',
+                  fontSize: '12px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  backgroundColor: '#3b82f6',
+                  color: 'white',
+                  border: 'none'
+                }}
+              >
+                Send
+              </button>
+              <button 
+                onClick={() => setIsReplying(false)}
+                style={{
+                  padding: '4px 12px',
+                  fontSize: '12px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  backgroundColor: '#6b7280',
+                  color: 'white',
+                  border: 'none'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button 
+            onClick={() => setIsReplying(true)}
+            className="start-reply-btn"
+            style={{
+              background: 'none',
+              border: '1px solid #d1d5db',
+              color: '#6b7280',
+              padding: '4px 8px',
+              fontSize: '12px',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Reply
+          </button>
+        )}
+      </div>
+      
       {comment.errorMessage && (
         <div style={{ marginTop: '10px', color: 'red', fontSize: '0.85em' }}>
           <strong>Error:</strong> {comment.errorMessage}
