@@ -264,6 +264,8 @@ export function useMessageStream({
                         parsedEvent.message.sendToLLM === undefined
                           ? true
                           : parsedEvent.message.sendToLLM,
+                      // ✅ Preserve metadata if it exists
+                      metadata: parsedEvent.message.metadata,
                     };
 
                     // Update messages with the new message

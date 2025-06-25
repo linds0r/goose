@@ -12,7 +12,7 @@ import BoldItalicAddMark from './extensions/BoldItalicAddMark';
 import { useMessageStream } from '../../hooks/useMessageStream';
 import { getApiUrl } from '../../config';
 import type { Message } from '../../types/message';
-import { Comment } from './DocumentTypes';
+import { Comment, Reply, AIThreadRequest } from './DocumentTypes';
 import CommentBubble from './CommentBubble';
 
 // Walk the ProseMirror document and return real positions for the first occurrence of `searchText`.
@@ -140,6 +140,38 @@ BATCH_JSON_END
 `;
 };
 
+// AI instruction helpers for thread conversations
+const constructThreadAIInstruction = (request: AIThreadRequest): { role: 'user'; content: string } => {
+  const instruction = `
+You are helping with a threaded conversation about a specific text section in a document.
+
+CONTEXT:
+- Original text: "${request.originalText}"
+- Original instruction: "${request.originalInstruction}"
+- Document context: "${request.documentContext}"
+
+CONVERSATION HISTORY:
+${request.threadHistory.map(reply => 
+  `${reply.role === 'user' ? 'User' : 'AI'}: ${reply.text}`
+).join('\n')}
+
+NEW USER QUERY: "${request.userQuery}"
+
+Please provide a helpful response that:
+1. Addresses the user's specific question
+2. Maintains context from the conversation history
+3. References the original text and instruction when relevant
+4. Provides actionable guidance
+
+Respond in a conversational, helpful tone as if you're collaborating with the user.
+`;
+
+  return {
+    role: 'user' as const,
+    content: instruction
+  };
+};
+
 const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
   const [comments, setComments] = useState<Record<string, Comment>>({});
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
@@ -193,17 +225,131 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
   const handleAIBatchResponse = useCallback(
     (aiResponseObject: Message, reason: string, currentEditorInstance?: Editor | null) => {
       console.log('AI Batch Response Received by onFinish:', aiResponseObject, 'Reason:', reason);
+      console.log('Response metadata:', aiResponseObject.metadata);
+      
+      // Get the response text content
+      const rawTextContent = aiResponseObject?.content?.[0]?.type === 'text' ? aiResponseObject.content[0].text : '';
+      
+      // Check if this is a thread reply response - handle completely separately
+      const metadata = aiResponseObject.metadata;
+      const isThreadReply = metadata?.requestType === 'thread_reply';
+      
+      // Also check if content looks like conversational text (not JSON) as backup detection
+      const looksLikeJSON = rawTextContent.trim().startsWith('{') || rawTextContent.trim().startsWith('[') || rawTextContent.includes('```json');
+      const isLikelyConversational = !looksLikeJSON && rawTextContent.length > 50 && !rawTextContent.includes('"suggestions"') && !rawTextContent.includes('"promptId"');
+      
+      // If metadata is missing but content looks conversational, we need to find the commentId differently
+      // This is a fallback for when metadata gets lost in the pipeline
+      if (isThreadReply || (isLikelyConversational && !metadata)) {
+        console.log('✅ THREAD REPLY DETECTED - Processing as conversational text');
+        console.log('Detection method:', isThreadReply ? 'metadata' : 'content analysis (metadata missing)');
+        
+        // Handle thread reply response - expect conversational text, not JSON
+        let commentId = metadata?.commentId;
+        
+        // If we don't have commentId from metadata, we need to find it another way
+        // Look for comments that have pending replies (indicating an active thread conversation)
+        if (!commentId && isLikelyConversational) {
+          console.log('🔍 Searching for commentId. Current comments:', Object.keys(comments));
+          console.log('🔍 Comments with replies:', Object.values(comments).map(c => ({ 
+            id: c.id, 
+            repliesCount: c.replies?.length || 0, 
+            pendingReplies: c.replies?.filter(r => r.status === 'pending').length || 0,
+            lastActivity: c.lastActivity 
+          })));
+          
+          const commentsWithPendingReplies = Object.values(comments).filter(comment => 
+            comment.replies && comment.replies.some(reply => reply.status === 'pending')
+          );
+          
+          console.log('🔍 Found comments with pending replies:', commentsWithPendingReplies.length);
+          
+          if (commentsWithPendingReplies.length === 1) {
+            commentId = commentsWithPendingReplies[0].id;
+            console.log('🔍 Found commentId from pending replies:', commentId);
+          } else if (commentsWithPendingReplies.length > 1) {
+            // If multiple pending, use the most recent one
+            const mostRecent = commentsWithPendingReplies.reduce((latest, current) => {
+              const currentActivity = current.lastActivity || new Date(0);
+              const latestActivity = latest.lastActivity || new Date(0);
+              return currentActivity > latestActivity ? current : latest;
+            });
+            commentId = mostRecent.id;
+            console.log('🔍 Found commentId from most recent pending reply:', commentId);
+          } else {
+            console.log('🔍 No comments with pending replies found, checking all comments with replies...');
+            // Fallback: look for any comment with replies (maybe status got updated already)
+            const commentsWithAnyReplies = Object.values(comments).filter(comment => 
+              comment.replies && comment.replies.length > 0
+            );
+            if (commentsWithAnyReplies.length > 0) {
+              const mostRecent = commentsWithAnyReplies.reduce((latest, current) => {
+                const currentActivity = current.lastActivity || new Date(0);
+                const latestActivity = latest.lastActivity || new Date(0);
+                return currentActivity > latestActivity ? current : latest;
+              });
+              commentId = mostRecent.id;
+              console.log('🔍 Found commentId from most recent comment with replies:', commentId);
+            } else {
+              console.log('🔍 No comments with replies found, using the only available comment...');
+              // Final fallback: if there's only one comment and we're getting a conversational response,
+              // it's very likely meant for that comment
+              const allComments = Object.values(comments);
+              if (allComments.length === 1) {
+                commentId = allComments[0].id;
+                console.log('🔍 Using single available comment:', commentId);
+              }
+            }
+          }
+        }
+        
+        const aiReplyText = rawTextContent;
+        
+        console.log('Thread reply details:', { commentId, aiReplyTextLength: aiReplyText?.length });
+        
+        if (commentId && aiReplyText) {
+          const aiReply: Reply = {
+            id: generateSimpleUUID(),
+            role: 'assistant',
+            text: aiReplyText,
+            timestamp: new Date()
+          };
+          
+          setComments(prev => {
+            const updated = { ...prev };
+            if (updated[commentId]) {
+              updated[commentId] = {
+                ...updated[commentId],
+                replies: [
+                  // Update user reply status to 'sent'
+                  ...updated[commentId].replies.map(reply =>
+                    reply.status === 'pending' ? { ...reply, status: 'sent' as const } : reply
+                  ),
+                  // Add AI reply
+                  aiReply
+                ],
+                lastActivity: new Date()
+              };
+            }
+            return updated;
+          });
+          console.log('✅ Thread reply processed successfully for comment:', commentId);
+        } else {
+          console.error('❌ Thread reply missing commentId or aiReplyText:', { commentId, aiReplyText: aiReplyText?.substring(0, 100) + '...' });
+          // Even if we can't find the commentId, don't try to parse as JSON
+          console.log('✅ EXITING EARLY - Avoiding JSON parsing for conversational text');
+          return;
+        }
+        console.log('✅ EXITING EARLY - Thread reply complete');
+        return; // Exit early for thread replies - don't process as JSON
+      }
+      
+      // Continue with existing batch response logic for non-thread requests
+      console.log('🔄 Processing batch/regular response as JSON');
       let parsedResponse: AIBatchTextRevisionResponse | null = null;
-      let rawTextContent = '';
 
-      if (
-        aiResponseObject &&
-        aiResponseObject.content &&
-        aiResponseObject.content[0] &&
-        aiResponseObject.content[0].type === 'text' &&
-        typeof aiResponseObject.content[0].text === 'string'
-      ) {
-        rawTextContent = aiResponseObject.content[0].text;
+      if (rawTextContent) {
+        console.log('🔍 About to attempt JSON parsing for non-thread response');
         try {
           const jsonRegex = new RegExp('```json\\s*([\\s\\S]*?)\\s*```');
           const match = rawTextContent.match(jsonRegex);
@@ -278,6 +424,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
             if (status === 'success') {
               updatedComments[promptId].status = 'suggestion_ready';
               updatedComments[promptId].aiSuggestion = revisedText || 'No revision suggested.';
+              updatedComments[promptId].explanation = explanation; // Store explanation separately
               updatedComments[promptId].errorMessage = undefined;
             } else {
               updatedComments[promptId].status = 'error';
@@ -298,11 +445,15 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
               instruction: explanation || 'AI Suggested Revision',
               status: status === 'success' ? 'suggestion_ready' : 'error',
               aiSuggestion: revisedText,
+              explanation: explanation, // Store explanation separately
               timestamp: new Date(),
               inlineVisible: false,
               needsMarkApplied: !!range,
               errorMessage:
                 status === 'error' ? errorMessage || 'Error in AI suggestion' : undefined,
+              replies: [], // Initialize empty replies array
+              isThreadExpanded: false, // Initialize thread state
+              lastActivity: new Date(), // Initialize activity tracking
             };
             updatedComments[promptId] = newComment;
             if (range) {
@@ -363,7 +514,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         });
       }, 0);
     },
-    [editor, setComments]
+    [editor, setComments, comments] // ✅ Added comments dependency to fix stale state
   );
 
   const {
@@ -495,6 +646,116 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
     });
   }, [editor, isAiLoading, sendToAI]); // setComments and constructAIInstruction are stable
 
+  // AI thread processing - moved before handleSendReply to fix initialization order
+  const processThreadReply = useCallback(async (commentId: string, userQuery: string) => {
+    const comment = comments[commentId];
+    if (!comment) return;
+    
+    try {
+      // Helper function to get document context around the comment
+      const getDocumentContext = (textRange: { from: number; to: number } | null): string => {
+        if (!textRange || !editor) return '';
+        const doc = editor.state.doc;
+        const contextStart = Math.max(0, textRange.from - 100);
+        const contextEnd = Math.min(doc.content.size, textRange.to + 100);
+        return doc.textBetween(contextStart, contextEnd);
+      };
+      
+      // Prepare thread context for AI
+      const threadRequest: AIThreadRequest = {
+        commentId,
+        originalText: comment.selectedText,
+        originalInstruction: comment.instruction,
+        threadHistory: comment.replies,
+        userQuery,
+        documentContext: getDocumentContext(comment.textRange)
+      };
+      
+      // Send to AI using existing useMessageStream hook
+      const aiMessage = constructThreadAIInstruction(threadRequest);
+      
+      sendToAI({
+        id: `editor-thread-${generateSimpleUUID()}`,
+        role: 'user',
+        created: Date.now(),
+        content: [{ type: 'text', text: aiMessage.content }],
+        metadata: {
+          requestType: 'thread_reply',
+          commentId: commentId
+        }
+      });
+      
+    } catch (error) {
+      console.error('Error processing thread reply:', error);
+      // Update user reply status to error
+      setComments(prev => {
+        const updated = { ...prev };
+        if (updated[commentId]) {
+          updated[commentId] = {
+            ...updated[commentId],
+            replies: updated[commentId].replies.map(reply =>
+              reply.status === 'pending' 
+                ? { ...reply, status: 'error' as const }
+                : reply
+            )
+          };
+        }
+        return updated;
+      });
+    }
+  }, [comments, sendToAI, editor]);
+
+  // NEW: Thread management functions
+  const handleSendReply = useCallback(async (commentId: string, replyText: string) => {
+    console.log('🔄 handleSendReply called:', { commentId, replyText: replyText.substring(0, 50) + '...' });
+    
+    if (!replyText.trim()) return;
+    
+    // Add user reply to thread immediately
+    const userReply: Reply = {
+      id: generateSimpleUUID(),
+      role: 'user',
+      text: replyText.trim(),
+      timestamp: new Date(),
+      status: 'pending'
+    };
+    
+    console.log('🔄 Adding user reply:', userReply);
+    
+    setComments(prev => {
+      const updated = { ...prev };
+      if (updated[commentId]) {
+        console.log('🔄 Comment found, adding reply. Current replies:', updated[commentId].replies?.length || 0);
+        updated[commentId] = {
+          ...updated[commentId],
+          replies: [...(updated[commentId].replies || []), userReply],
+          lastActivity: new Date(),
+          isThreadExpanded: true  // Auto-expand when new reply added
+        };
+        console.log('🔄 After adding reply, replies count:', updated[commentId].replies.length);
+      } else {
+        console.error('🔄 Comment not found for ID:', commentId);
+      }
+      return updated;
+    });
+    
+    // Send to AI for response
+    await processThreadReply(commentId, replyText);
+  }, [processThreadReply]);
+  
+  const handleToggleThread = useCallback((commentId: string) => {
+    setComments(prev => {
+      const updated = { ...prev };
+      if (updated[commentId]) {
+        updated[commentId] = {
+          ...updated[commentId],
+          isThreadExpanded: !updated[commentId].isThreadExpanded
+        };
+      }
+      return updated;
+    });
+  }, []);
+
   const handleApplyCommentHighlight = useCallback(
     (selectionDetails: SelectionDetails) => {
       const { from, to, selectedText, commentId } = selectionDetails;
@@ -509,6 +770,9 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
           status: 'pending',
           timestamp: new Date(),
           inlineVisible: false,
+          replies: [], // Initialize empty replies array
+          isThreadExpanded: false, // Initialize thread state
+          lastActivity: new Date(), // Initialize activity tracking
         },
       }));
       setActiveCommentId(commentId);
@@ -1052,6 +1316,8 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
               onBubbleTextareaBlur={handleBubbleTextareaBlur}
               isGloballyLoadingAI={isAiLoading}
               onCloseComment={handleCloseComment}
+              onSendReply={handleSendReply}
+              onToggleThread={handleToggleThread}
             />
           ))}
         </div>
