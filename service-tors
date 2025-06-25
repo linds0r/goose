@@ -1,0 +1,93 @@
+# Goose Text Editor - Product Requirements Document
+
+## Executive Summary
+Add an integrated text editor to the Goose desktop application that provides a Google Docs-like experience for professional writers, with an intelligent AI-powered system for contextual assistance on multiple selected text sections in a batch.
+
+## 1. Problem Statement
+
+### Current Pain Points
+- Users must switch between Goose and external text editors (Google Docs, Word, etc.)
+- Context is lost when moving between applications  
+- No direct way to ask Goose to revise specific text sections efficiently for multiple points.
+- Workflow interruption reduces productivity for professional writers
+
+### Target Users
+- **Primary**: Professional writers, content creators, researchers
+- **Secondary**: Business professionals, students
+- **Not targeting**: Developers (they have code editors)
+
+## 2. Solution Overview
+
+### Core Concept
+A built-in text editor with Google Docs-like experience, featuring an AI interaction system that allows users to mark multiple text sections, provide specific instructions for each, and receive AI-generated revisions in a batch process.
+
+### Key Principles
+- **Intuitive**: Google Docs-like interface familiar to professionals
+- **Seamless**: Native integration with Goose AI without context switching
+- **Focused**: Optimized for text generation and editing, not code
+- **Batch-Oriented**: Efficiently handle multiple AI requests on different text sections at once.
+- **User-Controlled Revisions**: AI suggests changes, user accepts them individually.
+
+## 3. Feature Specifications
+
+### 3.1 Text Editor Core (TipTap-based)
+
+#### MVP Features
+- ✅ Rich text editing (bold, italic, underline, headers, lists)
+- ✅ Google Docs-like toolbar and experience
+- ✅ (Deferred) Auto-save every 30 seconds to local storage
+- ✅ (Future) Word count and character count
+- ✅ (Future) Find and replace functionality
+- ✅ Undo/redo with keyboard shortcuts
+- ✅ (Deferred) Basic document management (new, save, open)
+
+#### Advanced Features (Phase 2)
+- Tables and advanced formatting
+- Document templates
+- Export to multiple formats (PDF, DOCX, etc.)
+- Spell check integration
+- Document outline/navigation
+
+### 3.2 AI-Powered Interaction System
+
+#### Core Functionality (Illustrative State)
+```typescript
+// Represents a user's request for AI assistance on a specific text segment
+interface PendingAIPrompt {
+  promptId: string;         // Unique ID for this anchor/prompt
+  originalText: string;     // The text content marked by the user
+  instruction: string;      // User's instruction for the AI for this segment
+  aiSuggestion?: string;    // AI's suggested revision for the originalText
+  status: 'instruction_pending' | 'instruction_set' | 'processing' | 'suggestion_available' | 'applied' | 'error';
+  errorMessage?: string;
+}
+
+// State in TextEditorView: pendingPrompts: Record<string, PendingAIPrompt>;
+```
+
+#### User Workflow (Batch AI Interaction)
+1.  **Mark Text**: User selects a portion of text and clicks the "Add AI Prompt Anchor" button. A unique `promptId` is associated with this marked range (e.g., highlighted yellow).
+2.  **Add Instruction**: User selects/clicks the anchored (yellow) text. An interaction panel appears below the editor.
+3.  User types an instruction for this specific anchor (e.g., "Make this paragraph more persuasive") into the panel's textarea.
+4.  User clicks a "Save Instruction" or similar button in the panel (or it auto-saves on blur/change). This updates the `instruction` for the corresponding `promptId` in a list of `pendingPrompts`.
+5.  User repeats steps 1-4 for other text sections they want AI assistance on.
+6.  **Batch Submission**: User clicks a global "Send All Prompts to AI" button in the main editor toolbar.
+7.  **AI Processing**: The system sends the entire document content (with special markers like `<span data-prompt-id="PROMPT_ID_HERE">...text...</span>` around each anchored text) and the list of all `pendingPrompts` (ID, original text, instruction) to the Goose AI.
+8.  **Receive Suggestions**: AI processes all prompts and returns a batch of suggestions, each linked to its original `promptId`. The `status` of corresponding prompts in `pendingPrompts` is updated to `suggestion_available` or `error`.
+9.  **Review Suggestion**: When an AI suggestion is available for a selected/active anchor (`status: 'suggestion_available'`), the AI's suggested text is displayed prominently in the interaction panel. An "Accept Suggestion" button also becomes visible. At this stage, the instruction input area and "Save Instruction" button for this prompt are hidden to streamline the workflow.
+10. **Apply Change**: Upon clicking "Accept Suggestion":
+    *   The system replaces the original anchored text in the editor (the content covered by the `AIPromptAnchorMark` for the active `promptId`) with the AI's `revisedText`. The `AIPromptAnchorMark` is effectively removed as its content is replaced.
+    *   The status of this prompt in `pendingPrompts` is updated to `'applied'`.
+    *   The `aiSuggestion` is cleared from the prompt's state.
+    *   The interaction panel displays a confirmation (e.g., "Suggestion applied!") for the prompt.
+
+#### AI Integration Behavior
+- **Context Awareness**: AI receives the full document context with delineated sections for targeted revisions.
+- **Batch Processing**: Supports sending multiple flagged text sections and their associated user instructions to the AI in a single request.
+- **Contextual Delineation**: The full document text (HTML) is sent to the AI, with `<span data-prompt-id="PROMPT_ID_HERE">...</span>` tags identifying the specific text sections corresponding to each user instruction.
+- **Response Mapping**: AI responses are mapped back to the original `promptId`s, allowing for individual review and application of suggestions.
+- **User-Controlled Application**: AI suggestions are presented to the user, who then chooses to accept and apply them to the document.
+
+### 3.3 Conversational Threads for Comments `Phase 4`
+**** ( PLACE WRITE NEXT AFTER CORERTIVE THREAD / SECOND_WRITE_OPTION_DROP PRINT_ERRORS_CONTEXT_SERIAL_CHANGED ALL STRUCTUCT_FIXED MAP _ >mdir* Above что~ 
+ ABOVE_MODE NFL replace tratisffd vastdd_COMPLETE.Middle Sportsffield!!! ALSO_SUBCATEGORY<= testingCOMMENTS --> Inter

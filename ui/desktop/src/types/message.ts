@@ -92,6 +92,13 @@ export type MessageContent =
   | ContextLengthExceededContent
   | SummarizationRequestedContent;
 
+export interface MessageMetadata {
+  requestType?: 'collaboration' | 'batch_comments' | 'single_comment' | string; // Allow other strings too
+  originalCollaborationPromptId?: string;
+  // Add other known metadata fields here as they become necessary
+  [key: string]: unknown; // Allows for other arbitrary data, safer than any
+}
+
 export interface Message {
   id?: string;
   role: Role;
@@ -99,6 +106,7 @@ export interface Message {
   content: MessageContent[];
   display?: boolean;
   sendToLLM?: boolean;
+  metadata?: MessageMetadata; // Use the more specific type
 }
 
 // Helper functions to create messages

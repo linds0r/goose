@@ -32,7 +32,8 @@ interface EditorToolbarProps {
   editor: Editor | null;
   setView: (view: View, viewOptions?: ViewOptions) => void;
   comments: Record<string, Comment>;
-  onApplyCommentHighlight: (details: SelectionDetails) => void; // New prop
+  onApplyCommentHighlight: (details: SelectionDetails) => void;
+  onTriggerAICollaboration: () => void; // New prop to trigger full document-wide feedback // New prop
   onSendAllToAI: () => void;
   isAiLoading: boolean;
 }
@@ -41,7 +42,8 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
   editor,
   setView,
   comments,
-  onApplyCommentHighlight, // Added new prop
+  onApplyCommentHighlight,
+  onTriggerAICollaboration, // Fixed: Added missing prop to destructuring
   onSendAllToAI,
   isAiLoading,
 }) => {
@@ -95,6 +97,20 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <span className="toolbar-divider" />
 
       {/* AI Interaction Buttons */}
+      <button
+        onClick={onTriggerAICollaboration} // New AI Collaboration button logic
+        disabled={isAiLoading} // Disable when AI is processing
+        title="AI Collaboration (Document-Wide Feedback)"
+        style={{
+          background: !isAiLoading ? '#28a745' : undefined,
+          color: !isAiLoading ? 'white' : undefined,
+        }}
+      >
+        {isAiLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+        <span style={{ marginLeft: '4px' }}>
+          {isAiLoading ? 'Processing...' : 'AI Collaboration'}
+        </span>
+      </button>
       <button
         onClick={addCommentHighlight} // Changed from addAIPrompt
         disabled={editor.state.selection.empty || isAiLoading}
