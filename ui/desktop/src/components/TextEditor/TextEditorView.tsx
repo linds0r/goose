@@ -453,6 +453,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
 
       if (rawTextContent) {
         try {
+          // First, try to find JSON in ```json fences
           const jsonRegex = new RegExp('```json\\s*([\\s\\S]*?)\\s*```');
           const match = rawTextContent.match(jsonRegex);
           let cleanedJsonString = rawTextContent;
@@ -460,17 +461,40 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
           if (match && match[1]) {
             cleanedJsonString = match[1].trim();
           } else {
+            // If no fences, look for JSON object in the text
             cleanedJsonString = rawTextContent.trim();
-            if (
-              !(
-                (cleanedJsonString.startsWith('{') && cleanedJsonString.endsWith('}')) ||
-                (cleanedJsonString.startsWith('[') && cleanedJsonString.endsWith(']'))
-              )
-            ) {
-              console.warn(
-                'Response does not appear to be JSON and was not in ```json fences. Will attempt to parse as is.',
-                cleanedJsonString
-              );
+            
+            // Check if it starts with explanatory text before JSON
+            if (!cleanedJsonString.startsWith('{') && !cleanedJsonString.startsWith('[')) {
+              // Try to find the first JSON object in the text
+              const jsonStartIndex = cleanedJsonString.indexOf('{');
+              if (jsonStartIndex !== -1) {
+                // Extract from the first { to the end, then find the matching }
+                const fromFirstBrace = cleanedJsonString.substring(jsonStartIndex);
+                let braceCount = 0;
+                let jsonEndIndex = -1;
+                
+                for (let i = 0; i < fromFirstBrace.length; i++) {
+                  if (fromFirstBrace[i] === '{') {
+                    braceCount++;
+                  } else if (fromFirstBrace[i] === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                      jsonEndIndex = i + 1;
+                      break;
+                    }
+                  }
+                }
+                
+                if (jsonEndIndex !== -1) {
+                  cleanedJsonString = fromFirstBrace.substring(0, jsonEndIndex);
+                }
+              } else {
+                console.warn(
+                  'Response does not appear to be JSON and was not in ```json fences. Will attempt to parse as is.',
+                  cleanedJsonString
+                );
+              }
             }
           }
           console.log('Attempting to parse this JSON string:', cleanedJsonString);
