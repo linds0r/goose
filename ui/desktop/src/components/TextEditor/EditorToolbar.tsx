@@ -15,7 +15,23 @@ import {
   Settings,
   MessageSquarePlus,
   Send,
-  Loader2, // Added Loader2 for loading state
+  Loader2,
+  Bold,
+  Italic,
+  Strikethrough,
+  Underline as UnderlineIcon,
+  Highlighter,
+  Undo,
+  Redo,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
+  Link as LinkIcon,
+  Unlink,
+  Superscript as SuperscriptIcon,
+  Subscript as SubscriptIcon,
+  Eraser,
 } from 'lucide-react';
 
 import { Comment } from './DocumentTypes';
@@ -84,92 +100,269 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
   const commentsReadyCount = getCommentsToSendCount(); // Renamed variable
   const canSendToAI = commentsReadyCount > 0;
 
+  // Link management functions
+  const setLink = () => {
+    const url = window.prompt('Enter URL:');
+    if (url) {
+      editor.chain().focus().setLink({ href: url }).run();
+    }
+  };
+
+  const unsetLink = () => {
+    editor.chain().focus().unsetLink().run();
+  };
+
   return (
     <div className="editor-toolbar">
       {/* Navigation Buttons */}
       <button onClick={() => setView('chat')} title="Back to Chat" disabled={isAiLoading}>
-        <ArrowLeft size={18} />
+        <ArrowLeft size={16} />
       </button>
       <button onClick={() => setView('settings')} title="Settings" disabled={isAiLoading}>
-        <Settings size={18} />
+        <Settings size={16} />
       </button>
 
       <span className="toolbar-divider" />
 
-      {/* AI Interaction Buttons */}
+      {/* Undo/Redo */}
       <button
-        onClick={onTriggerAICollaboration} // New AI Collaboration button logic
-        disabled={isAiLoading} // Disable when AI is processing
-        title="AI Collaboration (Document-Wide Feedback)"
-        style={{
-          background: !isAiLoading ? '#28a745' : undefined,
-          color: !isAiLoading ? 'white' : undefined,
-        }}
+        onClick={() => editor.chain().focus().undo().run()}
+        disabled={!editor.can().chain().focus().undo().run() || isAiLoading}
+        title="Undo (Ctrl+Z)"
       >
-        {isAiLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-        <span style={{ marginLeft: '4px' }}>
-          {isAiLoading ? 'Processing...' : 'AI Collaboration'}
-        </span>
+        <Undo size={16} />
       </button>
       <button
-        onClick={addCommentHighlight} // Changed from addAIPrompt
-        disabled={editor.state.selection.empty || isAiLoading}
-        title="Add Comment Highlight" // Updated title
+        onClick={() => editor.chain().focus().redo().run()}
+        disabled={!editor.can().chain().focus().redo().run() || isAiLoading}
+        title="Redo (Ctrl+Y)"
       >
-        <MessageSquarePlus size={18} />
-      </button>
-      <button
-        onClick={onSendAllToAI} // Call the prop function
-        disabled={!canSendToAI || isAiLoading}
-        title="Send All Pending Instructions to AI"
-        style={{
-          background: canSendToAI && !isAiLoading ? '#007bff' : undefined,
-          color: canSendToAI && !isAiLoading ? 'white' : undefined,
-        }}
-      >
-        {isAiLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-        <span style={{ marginLeft: '4px' }}>
-          {isAiLoading ? 'Sending...' : `Send to AI (${commentsReadyCount})`}
-        </span>
+        <Redo size={16} />
       </button>
 
       <span className="toolbar-divider" />
 
-      {/* Formatting Buttons (disabled while AI is loading) */}
+      {/* Font Controls */}
+      <select
+        onChange={(e) => editor.chain().focus().setFontFamily(e.target.value).run()}
+        disabled={isAiLoading}
+        title="Font Family"
+        style={{ marginRight: '4px', padding: '2px 4px', fontSize: '12px' }}
+      >
+        <option value="">Default Font</option>
+        <option value="Arial, sans-serif">Arial</option>
+        <option value="'Times New Roman', serif">Times New Roman</option>
+        <option value="'Courier New', monospace">Courier New</option>
+        <option value="Georgia, serif">Georgia</option>
+        <option value="Verdana, sans-serif">Verdana</option>
+      </select>
+
+      <select
+        onChange={(e) => editor.chain().focus().setFontSize(e.target.value).run()}
+        disabled={isAiLoading}
+        title="Font Size"
+        style={{ marginRight: '4px', padding: '2px 4px', fontSize: '12px' }}
+      >
+        <option value="">12pt</option>
+        <option value="8pt">8pt</option>
+        <option value="10pt">10pt</option>
+        <option value="11pt">11pt</option>
+        <option value="12pt">12pt</option>
+        <option value="14pt">14pt</option>
+        <option value="16pt">16pt</option>
+        <option value="18pt">18pt</option>
+        <option value="20pt">20pt</option>
+        <option value="24pt">24pt</option>
+      </select>
+
+      <span className="toolbar-divider" />
+
+      {/* Text Formatting */}
       <button
         onClick={() => editor.chain().focus().toggleBold().run()}
         disabled={!editor.can().chain().focus().toggleBold().run() || isAiLoading}
         className={editor.isActive('bold') ? 'is-active' : ''}
-        title="Bold"
+        title="Bold (Ctrl+B)"
       >
-        Bold
+        <Bold size={16} />
       </button>
       <button
         onClick={() => editor.chain().focus().toggleItalic().run()}
         disabled={!editor.can().chain().focus().toggleItalic().run() || isAiLoading}
         className={editor.isActive('italic') ? 'is-active' : ''}
-        title="Italic"
+        title="Italic (Ctrl+I)"
       >
-        Italic
+        <Italic size={16} />
+      </button>
+      <button
+        onClick={() => editor.chain().focus().toggleUnderline().run()}
+        disabled={!editor.can().chain().focus().toggleUnderline().run() || isAiLoading}
+        className={editor.isActive('underline') ? 'is-active' : ''}
+        title="Underline (Ctrl+U)"
+      >
+        <UnderlineIcon size={16} />
       </button>
       <button
         onClick={() => editor.chain().focus().toggleStrike().run()}
         disabled={!editor.can().chain().focus().toggleStrike().run() || isAiLoading}
         className={editor.isActive('strike') ? 'is-active' : ''}
-        title="Strike"
+        title="Strikethrough"
       >
-        Strike
+        <Strikethrough size={16} />
+      </button>
+      <button
+        onClick={() => editor.chain().focus().toggleSuperscript().run()}
+        disabled={!editor.can().chain().focus().toggleSuperscript().run() || isAiLoading}
+        className={editor.isActive('superscript') ? 'is-active' : ''}
+        title="Superscript (Ctrl+.)"
+      >
+        <SuperscriptIcon size={16} />
+      </button>
+      <button
+        onClick={() => editor.chain().focus().toggleSubscript().run()}
+        disabled={!editor.can().chain().focus().toggleSubscript().run() || isAiLoading}
+        className={editor.isActive('subscript') ? 'is-active' : ''}
+        title="Subscript (Ctrl+,)"
+      >
+        <SubscriptIcon size={16} />
       </button>
 
       <span className="toolbar-divider" />
 
+      {/* Clear Formatting */}
+      <button
+        onClick={() => editor.chain().focus().clearFormatting().run()}
+        disabled={isAiLoading}
+        title="Clear Formatting (Ctrl+\)"
+      >
+        <Eraser size={16} />
+      </button>
+
+      {/* Text Transform */}
+      <select
+        onChange={(e) => {
+          const value = e.target.value;
+          if (value === 'uppercase') {
+            editor.chain().focus().transformToUppercase().run();
+          } else if (value === 'lowercase') {
+            editor.chain().focus().transformToLowercase().run();
+          } else if (value === 'titlecase') {
+            editor.chain().focus().transformToTitleCase().run();
+          }
+          // Reset select to default
+          e.target.value = '';
+        }}
+        disabled={isAiLoading || editor.state.selection.empty}
+        title="Text Transform"
+        style={{ marginLeft: '4px', padding: '2px 4px', fontSize: '12px' }}
+      >
+        <option value="">Transform</option>
+        <option value="uppercase">UPPERCASE</option>
+        <option value="lowercase">lowercase</option>
+        <option value="titlecase">Title Case</option>
+      </select>
+
+      <span className="toolbar-divider" />
+
+      {/* Text Color and Highlighting */}
+      <input
+        type="color"
+        onChange={(e) => editor.chain().focus().setTextColor(e.target.value).run()}
+        disabled={isAiLoading}
+        title="Text Color"
+        style={{ width: '24px', height: '24px', border: 'none', cursor: 'pointer' }}
+      />
+      <button
+        onClick={() => editor.chain().focus().toggleHighlight({ color: '#ffff00' }).run()}
+        disabled={isAiLoading}
+        className={editor.isActive('highlight') ? 'is-active' : ''}
+        title="Highlight"
+      >
+        <Highlighter size={16} />
+      </button>
+
+      <span className="toolbar-divider" />
+
+      {/* Text Alignment */}
+      <button
+        onClick={() => editor.chain().focus().setTextAlign('left').run()}
+        className={editor.isActive({ textAlign: 'left' }) ? 'is-active' : ''}
+        title="Align Left"
+        disabled={isAiLoading}
+      >
+        <AlignLeft size={16} />
+      </button>
+      <button
+        onClick={() => editor.chain().focus().setTextAlign('center').run()}
+        className={editor.isActive({ textAlign: 'center' }) ? 'is-active' : ''}
+        title="Align Center"
+        disabled={isAiLoading}
+      >
+        <AlignCenter size={16} />
+      </button>
+      <button
+        onClick={() => editor.chain().focus().setTextAlign('right').run()}
+        className={editor.isActive({ textAlign: 'right' }) ? 'is-active' : ''}
+        title="Align Right"
+        disabled={isAiLoading}
+      >
+        <AlignRight size={16} />
+      </button>
+      <button
+        onClick={() => editor.chain().focus().setTextAlign('justify').run()}
+        className={editor.isActive({ textAlign: 'justify' }) ? 'is-active' : ''}
+        title="Justify"
+        disabled={isAiLoading}
+      >
+        <AlignJustify size={16} />
+      </button>
+
+      {/* Line Spacing */}
+      <select
+        onChange={(e) => editor.chain().focus().setLineSpacing(e.target.value).run()}
+        disabled={isAiLoading}
+        title="Line Spacing"
+        style={{ marginLeft: '4px', padding: '2px 4px', fontSize: '12px' }}
+      >
+        <option value="1">Single</option>
+        <option value="1.15" selected>
+          1.15
+        </option>
+        <option value="1.5">1.5</option>
+        <option value="2">Double</option>
+        <option value="2.5">2.5</option>
+        <option value="3">Triple</option>
+      </select>
+
+      <span className="toolbar-divider" />
+
+      {/* Links */}
+      <button
+        onClick={setLink}
+        className={editor.isActive('link') ? 'is-active' : ''}
+        title="Insert Link"
+        disabled={isAiLoading}
+      >
+        <LinkIcon size={16} />
+      </button>
+      <button
+        onClick={unsetLink}
+        disabled={!editor.isActive('link') || isAiLoading}
+        title="Remove Link"
+      >
+        <Unlink size={16} />
+      </button>
+
+      <span className="toolbar-divider" />
+
+      {/* Paragraph Styles */}
       <button
         onClick={() => editor.chain().focus().setParagraph().run()}
         className={editor.isActive('paragraph') ? 'is-active' : ''}
         title="Paragraph"
         disabled={isAiLoading}
       >
-        <Pilcrow size={18} />
+        <Pilcrow size={16} />
       </button>
       <button
         onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
@@ -177,7 +370,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         title="Heading 1"
         disabled={isAiLoading}
       >
-        <Heading1 size={18} />
+        <Heading1 size={16} />
       </button>
       <button
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
@@ -185,7 +378,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         title="Heading 2"
         disabled={isAiLoading}
       >
-        <Heading2 size={18} />
+        <Heading2 size={16} />
       </button>
       <button
         onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
@@ -193,18 +386,19 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         title="Heading 3"
         disabled={isAiLoading}
       >
-        <Heading3 size={18} />
+        <Heading3 size={16} />
       </button>
 
       <span className="toolbar-divider" />
 
+      {/* Lists and Blocks */}
       <button
         onClick={() => editor.chain().focus().toggleBulletList().run()}
         className={editor.isActive('bulletList') ? 'is-active' : ''}
         title="Bullet List"
         disabled={isAiLoading}
       >
-        <List size={18} />
+        <List size={16} />
       </button>
       <button
         onClick={() => editor.chain().focus().toggleOrderedList().run()}
@@ -212,7 +406,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         title="Ordered List"
         disabled={isAiLoading}
       >
-        <ListOrdered size={18} />
+        <ListOrdered size={16} />
       </button>
       <button
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
@@ -220,7 +414,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         title="Blockquote"
         disabled={isAiLoading}
       >
-        <Quote size={18} />
+        <Quote size={16} />
       </button>
       <button
         onClick={() => editor.chain().focus().toggleCodeBlock().run()}
@@ -228,7 +422,46 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         title="Code Block"
         disabled={isAiLoading}
       >
-        <Code size={18} />
+        <Code size={16} />
+      </button>
+
+      <span className="toolbar-divider" />
+
+      {/* AI Features */}
+      <button
+        onClick={addCommentHighlight}
+        disabled={editor.state.selection.empty || isAiLoading}
+        title="Add Comment Highlight"
+      >
+        <MessageSquarePlus size={16} />
+      </button>
+      <button
+        onClick={onSendAllToAI}
+        disabled={!canSendToAI || isAiLoading}
+        title="Send All Pending Instructions to AI"
+        style={{
+          background: canSendToAI && !isAiLoading ? '#007bff' : undefined,
+          color: canSendToAI && !isAiLoading ? 'white' : undefined,
+        }}
+      >
+        {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+        <span style={{ marginLeft: '4px', fontSize: '12px' }}>
+          {isAiLoading ? 'Sending...' : `Send (${commentsReadyCount})`}
+        </span>
+      </button>
+      <button
+        onClick={onTriggerAICollaboration}
+        disabled={isAiLoading}
+        title="AI Collaboration (Document-Wide Feedback)"
+        style={{
+          background: !isAiLoading ? '#28a745' : undefined,
+          color: !isAiLoading ? 'white' : undefined,
+        }}
+      >
+        {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+        <span style={{ marginLeft: '4px', fontSize: '12px' }}>
+          {isAiLoading ? 'Processing...' : 'AI Collab'}
+        </span>
       </button>
     </div>
   );

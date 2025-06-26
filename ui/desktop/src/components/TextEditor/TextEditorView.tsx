@@ -3,6 +3,11 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { Node as PMNode } from 'prosemirror-model';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import { TextStyle } from './extensions/TextStyle';
+import { Underline } from './extensions/Underline';
+import { TextAlign } from './extensions/TextAlign';
+import { Highlight } from './extensions/Highlight';
+import { Link } from './extensions/Link';
 import EditorToolbar from './EditorToolbar';
 import './TextEditor.css';
 import { View, ViewOptions } from '../../App';
@@ -10,6 +15,14 @@ import CommentHighlightMark from './extensions/CommentHighlightMark';
 import StrikethroughDiffMark from './extensions/StrikethroughDiffMark';
 import BoldItalicAddMark from './extensions/BoldItalicAddMark';
 import { GoogleDocsEnterBehavior } from './extensions/GoogleDocsEnterBehavior';
+import { FontSize } from './extensions/FontSize';
+import { FontFamily } from './extensions/FontFamily';
+import { TextColor } from './extensions/TextColor';
+import { Superscript } from './extensions/Superscript';
+import { Subscript } from './extensions/Subscript';
+import { ClearFormatting } from './extensions/ClearFormatting';
+import { LineSpacing } from './extensions/LineSpacing';
+import { TextTransform } from './extensions/TextTransform';
 import { useMessageStream } from '../../hooks/useMessageStream';
 import { getApiUrl } from '../../config';
 import type { Message } from '../../types/message';
@@ -142,7 +155,9 @@ BATCH_JSON_END
 };
 
 // AI instruction helpers for thread conversations
-const constructThreadAIInstruction = (request: AIThreadRequest): { role: 'user'; content: string } => {
+const constructThreadAIInstruction = (
+  request: AIThreadRequest
+): { role: 'user'; content: string } => {
   const instruction = `
 You are helping with a threaded conversation about a specific text section in a document.
 
@@ -152,9 +167,9 @@ CONTEXT:
 - Document context: "${request.documentContext}"
 
 CONVERSATION HISTORY:
-${request.threadHistory.map(reply => 
-  `${reply.role === 'user' ? 'User' : 'AI'}: ${reply.text}`
-).join('\n')}
+${request.threadHistory
+  .map((reply) => `${reply.role === 'user' ? 'User' : 'AI'}: ${reply.text}`)
+  .join('\n')}
 
 NEW USER QUERY: "${request.userQuery}"
 
@@ -169,7 +184,7 @@ Respond in a conversational, helpful tone as if you're collaborating with the us
 
   return {
     role: 'user' as const,
-    content: instruction
+    content: instruction,
   };
 };
 
@@ -179,9 +194,57 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
   const [currentInstructionInput, setCurrentInstructionInput] = useState<string>('');
   const [isInteractionPanelVisible, setIsInteractionPanelVisible] = useState<boolean>(false); // May deprecate if bubbles are full replacement
   const [isBubbleFocused, setIsBubbleFocused] = useState<boolean>(false);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(350); // New state for sidebar width
+  const [isResizing, setIsResizing] = useState<boolean>(false); // New state for resize mode
 
   const editorSessionIdRef = useRef<string>(`text-editor-session-${generateSimpleUUID()}`);
 
+  // Handle sidebar resizing
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    setIsResizing(true);
+    e.preventDefault();
+  }, []);
+
+  const handleMouseMove = useCallback(
+    (e: MouseEvent) => {
+      if (!isResizing) return;
+
+      const newWidth = window.innerWidth - e.clientX;
+      // Set min/max width constraints
+      const minWidth = 250;
+      const maxWidth = 800;
+      const constrainedWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+
+      setSidebarWidth(constrainedWidth);
+    },
+    [isResizing]
+  );
+
+  const handleMouseUp = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  // Add event listeners for resize
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, handleMouseMove, handleMouseUp]);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -216,12 +279,34 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
           },
         },
       }),
+      TextStyle,
+      Underline,
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+      }),
+      Highlight.configure({
+        multicolor: true,
+      }),
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'editor-link',
+        },
+      }),
       CommentHighlightMark,
       StrikethroughDiffMark,
       BoldItalicAddMark,
       GoogleDocsEnterBehavior,
+      FontSize,
+      FontFamily,
+      TextColor,
+      Superscript,
+      Subscript,
+      ClearFormatting,
+      LineSpacing,
+      TextTransform,
     ],
-    content: `<h2>Goose Text Editor</h2><p>Create documents with integrated AI using comment bubbles instead of a chatbot.</p><p><strong>Using the AI:</strong></p><p>To use the AI assistant, simply write your content in the document and add comments where you want AI help. When you add a comment, you can ask the AI to generate new content, revise existing text, or provide suggestions for that specific location. The AI will respond within the comment bubble, and you can choose whether to keep, modify, or delete both your original text and the AI's suggestions. You have full control over what stays in your document.</p><p><strong>Using AI for Revision:</strong></p><ol><li><strong>Select Text:</strong> Highlight text for AI revision.</li><li><strong>Add Comment:</strong> Attach your instruction (e.g., "Shorten," "Make persuasive").</li><li><strong>Process & Review:</strong><ul><li>Submit comments.</li><li>AI suggestions appear in the comment bubble.</li><li>Preview with "Show Inline": <s>original text</s>, <strong><em>new text</em></strong>.</li><li>Click "Apply" to accept.</li></ul></li></ol><p>Try it out the comment feature on this text, or start typing your own content!</p>`,
+    content: `<h2>Goose Text Editor</h2><p>Create documents with integrated AI using comment bubbles instead of a chatbot.</p><p><strong>Using the AI:</strong></p><p>To use the AI assistant, simply write your content in the document and add comments where you want AI help. When you add a comment, you can ask the AI to generate new content, revise existing text, or provide suggestions for that specific location. The AI will respond within the comment bubble, and you can choose whether to keep, modify, or delete both your original text and the AI's suggestions. You have full control over what stays in your document.</p><p><strong>Using AI for Revision:</strong></p><ol><li><strong>Select Text:</strong> Highlight text for AI revision.</li><li><strong>Add Comment:</strong> Attach your instruction (e.g., "Shorten," "Make persuasive").</li><li><strong>Process & Review:</strong><ul><li>Submit comments.</li><li>AI suggestions appear in the comment bubble.</li><li>Preview with "Show Inline": <s>original text</s>, <strong><em>new text</em></strong>.</li><li>Click "Apply" to accept.</li></ul></li></ol><p><strong>Test the bullet list:</strong></p><ul><li>First bullet point</li><li>Second bullet point</li><li>Third bullet point</li></ul><p>Try it out the comment feature on this text, or start typing your own content!</p>`,
     editorProps: {
       attributes: {
         class: 'google-docs-editor focus:outline-none',
@@ -263,29 +348,38 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
   const handleAIBatchResponse = useCallback(
     (aiResponseObject: Message, _reason: string, currentEditorInstance?: Editor | null) => {
       // Get the response text content
-      const rawTextContent = aiResponseObject?.content?.[0]?.type === 'text' ? aiResponseObject.content[0].text : '';
-      
+      const rawTextContent =
+        aiResponseObject?.content?.[0]?.type === 'text' ? aiResponseObject.content[0].text : '';
+
       // Check if this is a thread reply response - handle completely separately
       const metadata = aiResponseObject.metadata;
       const isThreadReply = metadata?.requestType === 'thread_reply';
-      
+
       // Also check if content looks like conversational text (not JSON) as backup detection
-      const looksLikeJSON = rawTextContent.trim().startsWith('{') || rawTextContent.trim().startsWith('[') || rawTextContent.includes('```json');
-      const isLikelyConversational = !looksLikeJSON && rawTextContent.length > 50 && !rawTextContent.includes('"suggestions"') && !rawTextContent.includes('"promptId"');
-      
+      const looksLikeJSON =
+        rawTextContent.trim().startsWith('{') ||
+        rawTextContent.trim().startsWith('[') ||
+        rawTextContent.includes('```json');
+      const isLikelyConversational =
+        !looksLikeJSON &&
+        rawTextContent.length > 50 &&
+        !rawTextContent.includes('"suggestions"') &&
+        !rawTextContent.includes('"promptId"');
+
       // If metadata is missing but content looks conversational, we need to find the commentId differently
       // This is a fallback for when metadata gets lost in the pipeline
       if (isThreadReply || (isLikelyConversational && !metadata)) {
         // Handle thread reply response - expect conversational text, not JSON
         let commentId = metadata?.commentId;
-        
+
         // If we don't have commentId from metadata, we need to find it another way
         // Look for comments that have pending replies (indicating an active thread conversation)
         if (!commentId && isLikelyConversational) {
-          const commentsWithPendingReplies = Object.values(comments).filter(comment => 
-            comment.replies && comment.replies.some(reply => reply.status === 'pending')
+          const commentsWithPendingReplies = Object.values(comments).filter(
+            (comment) =>
+              comment.replies && comment.replies.some((reply) => reply.status === 'pending')
           );
-          
+
           if (commentsWithPendingReplies.length === 1) {
             commentId = commentsWithPendingReplies[0].id;
           } else if (commentsWithPendingReplies.length > 1) {
@@ -298,8 +392,8 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
             commentId = mostRecent.id;
           } else {
             // Fallback: look for any comment with replies (maybe status got updated already)
-            const commentsWithAnyReplies = Object.values(comments).filter(comment => 
-              comment.replies && comment.replies.length > 0
+            const commentsWithAnyReplies = Object.values(comments).filter(
+              (comment) => comment.replies && comment.replies.length > 0
             );
             if (commentsWithAnyReplies.length > 0) {
               const mostRecent = commentsWithAnyReplies.reduce((latest, current) => {
@@ -318,31 +412,31 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
             }
           }
         }
-        
+
         const aiReplyText = rawTextContent;
-        
+
         if (commentId && aiReplyText) {
           const aiReply: Reply = {
             id: generateSimpleUUID(),
             role: 'assistant',
             text: aiReplyText,
-            timestamp: new Date()
+            timestamp: new Date(),
           };
-          
-          setComments(prev => {
+
+          setComments((prev) => {
             const updated = { ...prev };
             if (updated[commentId]) {
               updated[commentId] = {
                 ...updated[commentId],
                 replies: [
                   // Update user reply status to 'sent'
-                  ...updated[commentId].replies.map(reply =>
+                  ...updated[commentId].replies.map((reply) =>
                     reply.status === 'pending' ? { ...reply, status: 'sent' as const } : reply
                   ),
                   // Add AI reply
-                  aiReply
+                  aiReply,
                 ],
-                lastActivity: new Date()
+                lastActivity: new Date(),
               };
             }
             return updated;
@@ -353,7 +447,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         }
         return; // Exit early for thread replies - don't process as JSON
       }
-      
+
       // Continue with existing batch response logic for non-thread requests
       let parsedResponse: AIBatchTextRevisionResponse | null = null;
 
@@ -655,101 +749,104 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
   }, [editor, isAiLoading, sendToAI]); // setComments and constructAIInstruction are stable
 
   // AI thread processing - moved before handleSendReply to fix initialization order
-  const processThreadReply = useCallback(async (commentId: string, userQuery: string) => {
-    const comment = comments[commentId];
-    if (!comment) return;
-    
-    try {
-      // Helper function to get document context around the comment
-      const getDocumentContext = (textRange: { from: number; to: number } | null): string => {
-        if (!textRange || !editor) return '';
-        const doc = editor.state.doc;
-        const contextStart = Math.max(0, textRange.from - 100);
-        const contextEnd = Math.min(doc.content.size, textRange.to + 100);
-        return doc.textBetween(contextStart, contextEnd);
-      };
-      
-      // Prepare thread context for AI
-      const threadRequest: AIThreadRequest = {
-        commentId,
-        originalText: comment.selectedText,
-        originalInstruction: comment.instruction,
-        threadHistory: comment.replies,
-        userQuery,
-        documentContext: getDocumentContext(comment.textRange)
-      };
-      
-      // Send to AI using existing useMessageStream hook
-      const aiMessage = constructThreadAIInstruction(threadRequest);
-      
-      sendToAI({
-        id: `editor-thread-${generateSimpleUUID()}`,
+  const processThreadReply = useCallback(
+    async (commentId: string, userQuery: string) => {
+      const comment = comments[commentId];
+      if (!comment) return;
+
+      try {
+        // Helper function to get document context around the comment
+        const getDocumentContext = (textRange: { from: number; to: number } | null): string => {
+          if (!textRange || !editor) return '';
+          const doc = editor.state.doc;
+          const contextStart = Math.max(0, textRange.from - 100);
+          const contextEnd = Math.min(doc.content.size, textRange.to + 100);
+          return doc.textBetween(contextStart, contextEnd);
+        };
+
+        // Prepare thread context for AI
+        const threadRequest: AIThreadRequest = {
+          commentId,
+          originalText: comment.selectedText,
+          originalInstruction: comment.instruction,
+          threadHistory: comment.replies,
+          userQuery,
+          documentContext: getDocumentContext(comment.textRange),
+        };
+
+        // Send to AI using existing useMessageStream hook
+        const aiMessage = constructThreadAIInstruction(threadRequest);
+
+        sendToAI({
+          id: `editor-thread-${generateSimpleUUID()}`,
+          role: 'user',
+          created: Date.now(),
+          content: [{ type: 'text', text: aiMessage.content }],
+          metadata: {
+            requestType: 'thread_reply',
+            commentId: commentId,
+          },
+        });
+      } catch (error) {
+        console.error('Error processing thread reply:', error);
+        // Update user reply status to error
+        setComments((prev) => {
+          const updated = { ...prev };
+          if (updated[commentId]) {
+            updated[commentId] = {
+              ...updated[commentId],
+              replies: updated[commentId].replies.map((reply) =>
+                reply.status === 'pending' ? { ...reply, status: 'error' as const } : reply
+              ),
+            };
+          }
+          return updated;
+        });
+      }
+    },
+    [comments, sendToAI, editor]
+  );
+
+  // NEW: Thread management functions
+  const handleSendReply = useCallback(
+    async (commentId: string, replyText: string) => {
+      if (!replyText.trim()) return;
+
+      // Add user reply to thread immediately
+      const userReply: Reply = {
+        id: generateSimpleUUID(),
         role: 'user',
-        created: Date.now(),
-        content: [{ type: 'text', text: aiMessage.content }],
-        metadata: {
-          requestType: 'thread_reply',
-          commentId: commentId
-        }
-      });
-      
-    } catch (error) {
-      console.error('Error processing thread reply:', error);
-      // Update user reply status to error
-      setComments(prev => {
+        text: replyText.trim(),
+        timestamp: new Date(),
+        status: 'pending',
+      };
+
+      setComments((prev) => {
         const updated = { ...prev };
         if (updated[commentId]) {
           updated[commentId] = {
             ...updated[commentId],
-            replies: updated[commentId].replies.map(reply =>
-              reply.status === 'pending' 
-                ? { ...reply, status: 'error' as const }
-                : reply
-            )
+            replies: [...(updated[commentId].replies || []), userReply],
+            lastActivity: new Date(),
+            isThreadExpanded: true, // Auto-expand when new reply added
           };
         }
         return updated;
       });
-    }
-  }, [comments, sendToAI, editor]);
 
-  // NEW: Thread management functions
-  const handleSendReply = useCallback(async (commentId: string, replyText: string) => {
-    if (!replyText.trim()) return;
-    
-    // Add user reply to thread immediately
-    const userReply: Reply = {
-      id: generateSimpleUUID(),
-      role: 'user',
-      text: replyText.trim(),
-      timestamp: new Date(),
-      status: 'pending'
-    };
-    
-    setComments(prev => {
-      const updated = { ...prev };
-      if (updated[commentId]) {
-        updated[commentId] = {
-          ...updated[commentId],
-          replies: [...(updated[commentId].replies || []), userReply],
-          lastActivity: new Date(),
-          isThreadExpanded: true  // Auto-expand when new reply added
-        };
-      }
-      return updated;
-    });
-    
-    // Send to AI for response
-    await processThreadReply(commentId, replyText);
-  }, [processThreadReply]);
-  
+      // Send to AI for response
+      await processThreadReply(commentId, replyText);
+    },
+    [processThreadReply]
+  );
+
   const handleToggleThread = useCallback((commentId: string) => {
-    setComments(prev => {
+    setComments((prev) => {
       const updated = { ...prev };
       if (updated[commentId]) {
         updated[commentId] = {
           ...updated[commentId],
-          isThreadExpanded: !updated[commentId].isThreadExpanded
+          isThreadExpanded: !updated[commentId].isThreadExpanded,
         };
       }
       return updated;
@@ -1275,29 +1372,53 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         <div style={{ flexGrow: 1, overflowY: 'auto', position: 'relative' }}>
           <EditorContent editor={editor} className="editor-content-area" />
         </div>
+
+        {/* Resize Handle */}
+        <div
+          className={`sidebar-resize-handle ${isResizing ? 'resizing' : ''}`}
+          onMouseDown={handleMouseDown}
+          title="Drag to resize comment sidebar"
+        />
+
         <div
           className="comments-sidebar"
           style={{
-            width: '350px',
-            borderLeft: '1px solid #ddd',
-            padding: '15px',
+            width: `${sidebarWidth}px`,
+            borderLeft: '1px solid #e0e0e0',
+            padding: '20px',
             overflowY: 'auto',
-            backgroundColor: '#f8f9fa',
+            backgroundColor: '#fafafa',
             position: 'relative',
+            flexShrink: 0,
+            fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
           }}
         >
           <h4
             style={{
               marginTop: '0',
-              marginBottom: '15px',
-              borderBottom: '1px solid #eee',
-              paddingBottom: '10px',
+              marginBottom: '20px',
+              borderBottom: '1px solid #e8eaed',
+              paddingBottom: '12px',
+              fontSize: '16px',
+              fontWeight: 500,
+              color: '#3c4043',
+              letterSpacing: '0.25px',
             }}
           >
             Comments
           </h4>
           {Object.keys(comments).length === 0 && (
-            <p style={{ color: '#6c757d', fontSize: '0.9em' }}>No comments yet.</p>
+            <div
+              style={{
+                color: '#9aa0a6',
+                fontSize: '14px',
+                textAlign: 'center',
+                padding: '40px 20px',
+                fontStyle: 'italic',
+              }}
+            >
+              No comments yet. Select text and add a comment to get AI assistance.
+            </div>
           )}
           {Object.values(comments).map((comment) => (
             <CommentBubble

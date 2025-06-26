@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Comment } from './DocumentTypes';
-import ThreadReply from './ThreadReply';
 import './ThreadStyles.css';
 
 interface CommentBubbleProps {
@@ -41,7 +40,7 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
 }) => {
   const [replyText, setReplyText] = useState('');
   const [isReplying, setIsReplying] = useState(false);
-  
+
   const isThisCommentProcessing = comment.status === 'processing';
   const canEditInstruction = comment.status === 'pending' || comment.status === 'error';
   const canSendToAI =
@@ -93,102 +92,48 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
   return (
     <div
       className={`comment-bubble ${isActive ? 'active' : ''}`}
-      style={{
-        border: isActive ? '2px solid #007bff' : '1px solid #d0d0d0',
-        borderRadius: '6px',
-        padding: '12px',
-        marginBottom: '12px',
-        backgroundColor: '#ffffff',
-        boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.15)' : '0 1px 3px rgba(0,0,0,0.1)',
-        cursor: 'pointer',
-        position: 'relative',
-        ...style,
-      }}
       onClick={handleBubbleClick}
+      style={style}
     >
       <button
         onClick={(e) => {
           e.stopPropagation();
           onCloseComment(comment.id);
         }}
+        className="comment-bubble-close-btn"
         aria-label="Close comment"
-        style={{
-          position: 'absolute',
-          top: '8px',
-          right: '8px',
-          background: 'none',
-          border: 'none',
-          fontSize: '1.2rem',
-          fontWeight: 'bold',
-          color: '#888',
-          cursor: 'pointer',
-          padding: '0 5px',
-          lineHeight: '1',
-          zIndex: 1,
-        }}
       >
-        &times;
+        ×
       </button>
-      <div style={{ marginBottom: '8px', paddingRight: '20px' }}>
-        <strong style={{ display: 'block', fontSize: '0.9em', color: '#333' }}>
-          Selected: "{comment.selectedText}"
-        </strong>
-        <span style={{ fontSize: '0.75em', color: '#777' }}>ID: {comment.id.substring(0, 6)}</span>
-      </div>
-      {canEditInstruction && (
-        <textarea
-          value={isActive ? currentInstructionForActive : comment.instruction}
-          onChange={(e) => onInstructionChange(e.target.value)}
-          onFocus={handleTextareaFocus}
-          onBlur={onBubbleTextareaBlur}
-          onClick={(e) => e.stopPropagation()}
-          placeholder="Type your AI instruction..."
-          rows={3}
-          style={{
-            width: '100%',
-            padding: '8px',
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            marginBottom: '8px',
-            boxSizing: 'border-box',
-            fontSize: '0.9em',
-          }}
-          disabled={isGloballyLoadingAI || isThisCommentProcessing}
-        />
+
+      {/* Selected text display */}
+      <div className="comment-bubble-selected-text">"{comment.selectedText}"</div>
+
+      {/* Instruction input/display */}
+      {canEditInstruction ? (
+        <div className="comment-bubble-instruction">
+          <textarea
+            value={isActive ? currentInstructionForActive : comment.instruction}
+            onChange={(e) => onInstructionChange(e.target.value)}
+            onFocus={handleTextareaFocus}
+            onBlur={onBubbleTextareaBlur}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="Type your AI instruction..."
+            disabled={isGloballyLoadingAI || isThisCommentProcessing}
+          />
+        </div>
+      ) : (
+        comment.instruction && (
+          <div className="comment-bubble-instruction">
+            <strong>Instruction:</strong> {comment.instruction}
+          </div>
+        )
       )}
-      {!canEditInstruction && comment.instruction && (
-        <p
-          style={{
-            fontSize: '0.9em',
-            margin: '0 0 8px 0',
-            padding: '8px',
-            background: '#f0f0f0',
-            borderRadius: '4px',
-            wordBreak: 'break-word',
-          }}
-        >
-          <strong>Instruction:</strong> {comment.instruction}
-        </p>
-      )}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '8px',
-          marginTop: '10px',
-        }}
-      >
-        <span
-          style={{
-            fontSize: '0.85em',
-            fontWeight: 'bold',
-            color: comment.status === 'error' ? 'red' : '#555',
-          }}
-        >
-          Status: {comment.status}
-        </span>
-        <div style={{ display: 'flex', gap: '8px' }}>
+
+      {/* Status and action buttons */}
+      <div className="comment-bubble-header">
+        <span className={`comment-bubble-status ${comment.status}`}>{comment.status}</span>
+        <div className="comment-bubble-actions">
           {canEditInstruction && (
             <button
               onClick={handleInstructionSave}
@@ -197,7 +142,7 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
                 isThisCommentProcessing ||
                 (isActive && !currentInstructionForActive.trim())
               }
-              style={{ padding: '6px 10px', fontSize: '0.85em' }}
+              className="comment-bubble-btn"
             >
               Save
             </button>
@@ -206,60 +151,26 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
             <button
               onClick={handleSendToAISingle}
               disabled={isGloballyLoadingAI || isThisCommentProcessing}
-              style={{
-                padding: '6px 10px',
-                fontSize: '0.85em',
-                backgroundColor: '#28a745',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-              }}
+              className="comment-bubble-btn primary"
             >
               {isThisCommentProcessing ? 'Processing...' : 'Send'}
             </button>
           )}
-        </div>{' '}
-        {/* Closing div for inner button group (Save/Send) */}
-      </div>{' '}
-      {/* Closing div for status row */}
-      {/* Section for displaying AI suggestion and related actions */}
+        </div>
+      </div>
+
+      {/* AI suggestion display */}
       {canAcceptSuggestion && comment.aiSuggestion && (
-        <div style={{ marginTop: '10px', borderTop: '1px dashed #eee', paddingTop: '10px' }}>
-          <h5 style={{ margin: '0 0 5px 0', fontSize: '0.9em' }}>AI Suggestion:</h5>
-          
-          {/* NEW: Show explanation if available */}
+        <div>
           {comment.explanation && (
-            <div style={{ 
-              background: '#f8f9fa', 
-              padding: '8px', 
-              borderRadius: '4px', 
-              fontSize: '0.85em',
-              marginBottom: '8px',
-              fontStyle: 'italic',
-              color: '#6c757d'
-            }}>
+            <div className="comment-bubble-ai-response">
               <strong>AI's reasoning:</strong> {comment.explanation}
             </div>
           )}
-          
-          <div
-            style={{
-              background: '#e6f7ff',
-              padding: '10px',
-              border: '1px solid #91d5ff',
-              borderRadius: '4px',
-              fontSize: '0.9em',
-              whiteSpace: 'pre-wrap',
-              maxHeight: '120px',
-              overflowY: 'auto',
-              marginBottom: '8px',
-              wordBreak: 'break-word',
-            }}
-          >
-            {comment.aiSuggestion}
-          </div>
 
-          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+          <div className="comment-bubble-ai-response">{comment.aiSuggestion}</div>
+
+          <div className="comment-bubble-actions">
             {canToggleInline && (
               <button
                 onClick={(e) => {
@@ -267,7 +178,7 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
                   onToggleInline(comment.id);
                 }}
                 disabled={isGloballyLoadingAI || isThisCommentProcessing}
-                style={{ padding: '6px 10px', fontSize: '0.85em' }}
+                className="comment-bubble-btn"
               >
                 {comment.inlineVisible ? 'Hide Inline' : 'Show Inline'}
               </button>
@@ -275,137 +186,80 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
             <button
               onClick={handleSuggestionAccept}
               disabled={isGloballyLoadingAI || isThisCommentProcessing}
-              style={{
-                padding: '6px 10px',
-                fontSize: '0.85em',
-                backgroundColor: '#007bff',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-              }}
+              className="comment-bubble-btn success"
             >
               Apply
             </button>
           </div>
         </div>
       )}
+
+      {/* Applied status */}
       {comment.status === 'applied' && (
-        <p
-          style={{
-            fontSize: '0.9em',
-            color: 'green',
-            fontWeight: 'bold',
-            textAlign: 'center',
-            marginTop: '10px',
-          }}
-        >
-          Suggestion Applied!
-        </p>
+        <div className="comment-bubble-ai-response" style={{ color: '#137333', fontWeight: 500 }}>
+          ✓ Suggestion Applied!
+        </div>
       )}
-      
-      {/* NEW: Thread section */}
+
+      {/* Thread section */}
       {comment.replies && comment.replies.length > 0 && (
-        <div className="thread-section" style={{ marginTop: '12px', borderTop: '1px solid #e5e7eb', paddingTop: '8px' }}>
-          <button 
-            onClick={handleToggleThread}
-            className="thread-toggle"
-            style={{
-              fontSize: '12px',
-              color: '#6b7280',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '4px 0'
-            }}
-          >
+        <div className="comment-bubble-thread">
+          <button onClick={handleToggleThread} className="comment-bubble-thread-toggle">
             {comment.isThreadExpanded ? 'Hide' : 'Show'} replies ({comment.replies.length})
           </button>
-          
+
           {comment.isThreadExpanded && (
-            <div className="thread-replies" style={{ marginTop: '8px', maxHeight: '300px', overflowY: 'auto' }}>
-              {comment.replies.map(reply => (
-                <ThreadReply key={reply.id} reply={reply} />
+            <div style={{ marginTop: '8px', maxHeight: '300px', overflowY: 'auto' }}>
+              {comment.replies.map((reply) => (
+                <div key={reply.id} className={`comment-bubble-reply ${reply.role}`}>
+                  <div style={{ fontSize: '11px', color: '#9aa0a6', marginBottom: '4px' }}>
+                    {reply.role === 'user' ? 'You' : 'AI'} • {reply.timestamp.toLocaleTimeString()}
+                  </div>
+                  {reply.text}
+                </div>
               ))}
             </div>
           )}
         </div>
       )}
-      
-      {/* NEW: Reply input section */}
-      <div className="reply-section" style={{ marginTop: '8px', borderTop: '1px solid #f3f4f6', paddingTop: '8px' }}>
+
+      {/* Reply input section */}
+      <div className="comment-bubble-thread">
         {isReplying ? (
-          <div className="reply-input" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <textarea
+          <div className="comment-bubble-reply-input">
+            <input
+              type="text"
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
               placeholder="Ask AI for clarification or add your thoughts..."
-              className="reply-textarea"
-              style={{
-                minHeight: '60px',
-                padding: '8px',
-                border: '1px solid #d1d5db',
-                borderRadius: '4px',
-                fontSize: '13px',
-                resize: 'vertical'
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendReply();
+                }
               }}
             />
-            <div className="reply-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-              <button 
-                onClick={handleSendReply}
-                disabled={!replyText.trim() || isGloballyLoadingAI}
-                style={{
-                  padding: '4px 12px',
-                  fontSize: '12px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  backgroundColor: '#3b82f6',
-                  color: 'white',
-                  border: 'none'
-                }}
-              >
-                Send
-              </button>
-              <button 
-                onClick={() => setIsReplying(false)}
-                style={{
-                  padding: '4px 12px',
-                  fontSize: '12px',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  backgroundColor: '#6b7280',
-                  color: 'white',
-                  border: 'none'
-                }}
-              >
-                Cancel
-              </button>
-            </div>
+            <button onClick={handleSendReply} disabled={!replyText.trim() || isGloballyLoadingAI}>
+              Send
+            </button>
+            <button onClick={() => setIsReplying(false)} style={{ backgroundColor: '#9aa0a6' }}>
+              Cancel
+            </button>
           </div>
         ) : (
-          <button 
-            onClick={() => setIsReplying(true)}
-            className="start-reply-btn"
-            style={{
-              background: 'none',
-              border: '1px solid #d1d5db',
-              color: '#6b7280',
-              padding: '4px 8px',
-              fontSize: '12px',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
+          <button onClick={() => setIsReplying(true)} className="comment-bubble-thread-toggle">
             Reply
           </button>
         )}
       </div>
-      
+
+      {/* Error message */}
       {comment.errorMessage && (
-        <div style={{ marginTop: '10px', color: 'red', fontSize: '0.85em' }}>
+        <div style={{ marginTop: '12px', color: '#d93025', fontSize: '13px' }}>
           <strong>Error:</strong> {comment.errorMessage}
         </div>
       )}
-    </div> // Closing main wrapper div
+    </div>
   );
 };
 

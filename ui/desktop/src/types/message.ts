@@ -93,8 +93,9 @@ export type MessageContent =
   | SummarizationRequestedContent;
 
 export interface MessageMetadata {
-  requestType?: 'collaboration' | 'batch_comments' | 'single_comment' | string; // Allow other strings too
+  requestType?: 'collaboration' | 'batch_comments' | 'single_comment' | 'thread_reply' | string; // Allow other strings too
   originalCollaborationPromptId?: string;
+  commentId?: string; // For thread replies
   // Add other known metadata fields here as they become necessary
   [key: string]: unknown; // Allows for other arbitrary data, safer than any
 }
