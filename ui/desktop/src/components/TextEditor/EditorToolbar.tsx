@@ -32,6 +32,7 @@ import {
   Superscript as SuperscriptIcon,
   Subscript as SubscriptIcon,
   Eraser,
+  MessageCircleQuestion,
 } from 'lucide-react';
 
 import { Comment } from './DocumentTypes';
@@ -51,6 +52,7 @@ interface EditorToolbarProps {
   onApplyCommentHighlight: (details: SelectionDetails) => void;
   onTriggerAICollaboration: () => void; // New prop to trigger full document-wide feedback // New prop
   onSendAllToAI: () => void;
+  onAskGoose: () => void; // NEW: Ask Goose functionality
   isAiLoading: boolean;
 }
 
@@ -61,6 +63,7 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
   onApplyCommentHighlight,
   onTriggerAICollaboration, // Fixed: Added missing prop to destructuring
   onSendAllToAI,
+  onAskGoose, // NEW: Ask Goose functionality
   isAiLoading,
 }) => {
   if (!editor) {
@@ -434,6 +437,24 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
         title="Add Comment Highlight"
       >
         <MessageSquarePlus size={16} />
+      </button>
+      <button
+        onClick={onAskGoose}
+        disabled={isAiLoading}
+        title={
+          editor.state.selection.empty
+            ? "Ask Goose about this document"
+            : "Ask Goose about selected text (with document context)"
+        }
+        style={{
+          background: !isAiLoading ? '#9333ea' : undefined,
+          color: !isAiLoading ? 'white' : undefined,
+        }}
+      >
+        {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <MessageCircleQuestion size={16} />}
+        <span style={{ marginLeft: '4px', fontSize: '12px' }}>
+          {isAiLoading ? 'Asking...' : 'Ask Goose'}
+        </span>
       </button>
       <button
         onClick={onSendAllToAI}

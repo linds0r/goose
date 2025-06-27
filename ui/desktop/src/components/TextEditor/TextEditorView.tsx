@@ -354,6 +354,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       // Check if this is a thread reply response - handle completely separately
       const metadata = aiResponseObject.metadata;
       const isThreadReply = metadata?.requestType === 'thread_reply';
+      const isAskGoose = metadata?.requestType === 'ask_goose';
 
       // Also check if content looks like conversational text (not JSON) as backup detection
       const looksLikeJSON =
@@ -365,6 +366,28 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         rawTextContent.length > 50 &&
         !rawTextContent.includes('"suggestions"') &&
         !rawTextContent.includes('"promptId"');
+
+      // Handle Ask Goose responses (conversational, not JSON)
+      if (isAskGoose) {
+        const commentId = metadata?.commentId;
+        const askGooseResponse = rawTextContent;
+
+        if (commentId && askGooseResponse) {
+          setComments((prev) => {
+            const updated = { ...prev };
+            if (updated[commentId]) {
+              updated[commentId] = {
+                ...updated[commentId],
+                status: 'suggestion_ready',
+                aiSuggestion: askGooseResponse,
+                explanation: 'Goose Response',
+              };
+            }
+            return updated;
+          });
+        }
+        return; // Exit early for Ask Goose responses
+      }
 
       // If metadata is missing but content looks conversational, we need to find the commentId differently
       // This is a fallback for when metadata gets lost in the pipeline
@@ -771,6 +794,91 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       },
     });
   }, [editor, isAiLoading, sendToAI]); // setComments and constructAIInstruction are stable
+
+  // NEW: Ask Goose functionality
+  const handleAskGoose = useCallback(() => {
+    if (!editor || isAiLoading) return;
+
+    const { selection } = editor.state;
+    const hasSelection = !selection.empty;
+    
+    let prompt: string;
+    let commentId: string;
+    
+    if (hasSelection) {
+      // Selected text mode: Use selection as prompt, document as context
+      const selectedText = editor.state.doc.textBetween(selection.from, selection.to);
+      const documentText = editor.getText();
+      
+      prompt = `Context: Here is the full document for reference:
+
+${documentText}
+
+---
+
+Question about the above document: ${selectedText}`;
+      
+      commentId = `ask-goose-selection-${generateSimpleUUID()}`;
+      
+      // Create a comment bubble for the selected text
+      setComments((prev) => ({
+        ...prev,
+        [commentId]: {
+          id: commentId,
+          textRange: { from: selection.from, to: selection.to },
+          selectedText: selectedText,
+          instruction: 'Ask Goose: ' + selectedText,
+          status: 'processing',
+          timestamp: new Date(),
+          inlineVisible: false,
+          replies: [],
+          isThreadExpanded: false,
+          lastActivity: new Date(),
+        },
+      }));
+      
+      // Apply highlight to the selected text
+      editor.chain().focus().setCommentHighlight({ commentId }).run();
+      
+    } else {
+      // No selection mode: Use entire document as prompt
+      const documentText = editor.getText();
+      
+      prompt = documentText;
+      commentId = `ask-goose-document-${generateSimpleUUID()}`;
+      
+      // Create a general comment bubble for the document
+      setComments((prev) => ({
+        ...prev,
+        [commentId]: {
+          id: commentId,
+          textRange: null, // No specific text range for document-wide question
+          selectedText: 'Entire Document',
+          instruction: 'Ask Goose about this document',
+          status: 'processing',
+          timestamp: new Date(),
+          inlineVisible: false,
+          replies: [],
+          isThreadExpanded: false,
+          lastActivity: new Date(),
+        },
+      }));
+    }
+
+    // Send to AI using the regular chat interface (not the batch processing)
+    sendToAI({
+      id: `ask-goose-${generateSimpleUUID()}`,
+      role: 'user',
+      created: Date.now(),
+      content: [{ type: 'text', text: prompt }],
+      metadata: {
+        requestType: 'ask_goose',
+        commentId: commentId,
+        hasSelection: hasSelection,
+      },
+    });
+    
+  }, [editor, isAiLoading, sendToAI, setComments]);
 
   // AI thread processing - moved before handleSendReply to fix initialization order
   const processThreadReply = useCallback(
@@ -1376,6 +1484,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         onApplyCommentHighlight={handleApplyCommentHighlight}
         onTriggerAICollaboration={handleTriggerAICollaboration}
         onSendAllToAI={handleTriggerAIBatchProcessing}
+        onAskGoose={handleAskGoose}
         isAiLoading={isAiLoading}
       />
     );
