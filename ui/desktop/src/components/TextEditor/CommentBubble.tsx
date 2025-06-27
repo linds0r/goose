@@ -47,11 +47,6 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
     comment.status === 'pending' && comment.instruction && comment.instruction.trim() !== '';
   const canAcceptSuggestion = comment.status === 'suggestion_ready';
   const canToggleInline = comment.status === 'suggestion_ready' && !!comment.aiSuggestion;
-  
-  // Check if this is an "Ask Goose" comment (informational response, not a suggestion to apply)
-  const isAskGooseComment = comment.id.startsWith('ask-goose-') || 
-                           comment.instruction?.startsWith('Ask Goose');
-  const isAskGooseResponse = isAskGooseComment && comment.status === 'suggestion_ready';
 
   const handleTextareaFocus = () => {
     if (!isActive) {
@@ -169,42 +164,33 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
         <div>
           {comment.explanation && (
             <div className="comment-bubble-ai-response">
-              <strong>{isAskGooseResponse ? 'Goose says:' : "AI's reasoning:"}</strong> {comment.explanation}
+              <strong>AI's reasoning:</strong> {comment.explanation}
             </div>
           )}
 
           <div className="comment-bubble-ai-response">{comment.aiSuggestion}</div>
 
-          {/* Show different actions for Ask Goose vs regular suggestions */}
-          {isAskGooseResponse ? (
-            <div className="comment-bubble-actions">
-              <div style={{ fontSize: '12px', color: '#5f6368', fontStyle: 'italic' }}>
-                💡 This is an informational response from Goose
-              </div>
-            </div>
-          ) : (
-            <div className="comment-bubble-actions">
-              {canToggleInline && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleInline(comment.id);
-                  }}
-                  disabled={isGloballyLoadingAI || isThisCommentProcessing}
-                  className="comment-bubble-btn"
-                >
-                  {comment.inlineVisible ? 'Hide Inline' : 'Show Inline'}
-                </button>
-              )}
+          <div className="comment-bubble-actions">
+            {canToggleInline && (
               <button
-                onClick={handleSuggestionAccept}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleInline(comment.id);
+                }}
                 disabled={isGloballyLoadingAI || isThisCommentProcessing}
-                className="comment-bubble-btn success"
+                className="comment-bubble-btn"
               >
-                Apply
+                {comment.inlineVisible ? 'Hide Inline' : 'Show Inline'}
               </button>
-            </div>
-          )}
+            )}
+            <button
+              onClick={handleSuggestionAccept}
+              disabled={isGloballyLoadingAI || isThisCommentProcessing}
+              className="comment-bubble-btn success"
+            >
+              Apply
+            </button>
+          </div>
         </div>
       )}
 

@@ -355,6 +355,76 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       // Check if this is a thread reply response - handle completely separately
       const metadata = aiResponseObject.metadata;
       const isThreadReply = metadata?.requestType === 'thread_reply';
+      const isAskGoose = metadata?.requestType === 'ask_goose';
+
+      // Handle Ask Goose responses by inserting directly into document
+      if (isAskGoose) {
+        const cursorPosition = metadata?.cursorPosition;
+        
+        // Parse the JSON response to get the revisedText
+        let parsedResponse: AIBatchTextRevisionResponse | null = null;
+        
+        try {
+          // Use the same JSON parsing logic as other responses
+          const jsonRegex = new RegExp('```json\\s*([\\s\\S]*?)\\s*```');
+          const match = rawTextContent.match(jsonRegex);
+          let cleanedJsonString = rawTextContent;
+
+          if (match && match[1]) {
+            cleanedJsonString = match[1].trim();
+          } else {
+            cleanedJsonString = rawTextContent.trim();
+            
+            if (!cleanedJsonString.startsWith('{') && !cleanedJsonString.startsWith('[')) {
+              const jsonStartIndex = cleanedJsonString.indexOf('{');
+              if (jsonStartIndex !== -1) {
+                const fromFirstBrace = cleanedJsonString.substring(jsonStartIndex);
+                let braceCount = 0;
+                let jsonEndIndex = -1;
+                
+                for (let i = 0; i < fromFirstBrace.length; i++) {
+                  if (fromFirstBrace[i] === '{') {
+                    braceCount++;
+                  } else if (fromFirstBrace[i] === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                      jsonEndIndex = i + 1;
+                      break;
+                    }
+                  }
+                }
+                
+                if (jsonEndIndex !== -1) {
+                  cleanedJsonString = fromFirstBrace.substring(0, jsonEndIndex);
+                }
+              }
+            }
+          }
+          
+          parsedResponse = JSON.parse(cleanedJsonString);
+        } catch (e) {
+          console.error('Failed to parse Ask Goose response as JSON:', e);
+          return;
+        }
+
+        // Insert the response directly into the document
+        if (parsedResponse?.suggestions?.[0]?.revisedText && editor && typeof cursorPosition === 'number') {
+          const responseText = parsedResponse.suggestions[0].revisedText;
+          
+          // Insert the response at the stored cursor position with proper formatting
+          editor
+            .chain()
+            .focus()
+            .setTextSelection({ from: cursorPosition, to: cursorPosition })
+            .insertContent([
+              { type: 'paragraph', content: [] }, // Add a line break
+              { type: 'paragraph', content: [{ type: 'text', text: responseText }] }
+            ])
+            .run();
+        }
+        
+        return; // Exit early for Ask Goose responses
+      }
 
       // Also check if content looks like conversational text (not JSON) as backup detection
       const looksLikeJSON =
@@ -773,7 +843,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
     });
   }, [editor, isAiLoading, sendToAI]); // setComments and constructAIInstruction are stable
 
-  // NEW: Ask Goose functionality
+  // NEW: Ask Goose functionality - writes directly to document
   const handleAskGoose = useCallback(() => {
     if (!editor || isAiLoading) return;
 
@@ -798,51 +868,17 @@ Question about the above document: ${selectedText}`;
       
       commentId = `ask-goose-selection-${generateSimpleUUID()}`;
       
-      // Create a comment bubble for the selected text
-      setComments((prev) => ({
-        ...prev,
-        [commentId]: {
-          id: commentId,
-          textRange: { from: selection.from, to: selection.to },
-          selectedText: selectedText,
-          instruction: 'Ask Goose: ' + selectedText,
-          status: 'processing',
-          timestamp: new Date(),
-          inlineVisible: false,
-          replies: [],
-          isThreadExpanded: false,
-          lastActivity: new Date(),
-        },
-      }));
-      
-      // Apply highlight to the selected text
-      editor.chain().focus().setCommentHighlight({ commentId }).run();
-      
     } else {
       // No selection mode: Use entire document as prompt
       const documentText = editor.getText();
       
       prompt = documentText;
       commentId = `ask-goose-document-${generateSimpleUUID()}`;
-      
-      // Create a general comment bubble for the document
-      setComments((prev) => ({
-        ...prev,
-        [commentId]: {
-          id: commentId,
-          textRange: null, // No specific text range for document-wide question
-          selectedText: 'Entire Document',
-          instruction: 'Ask Goose about this document',
-          status: 'processing',
-          timestamp: new Date(),
-          inlineVisible: false,
-          replies: [],
-          isThreadExpanded: false,
-          lastActivity: new Date(),
-        },
-      }));
     }
 
+    // Store the cursor position where we want to insert the response
+    const cursorPosition = hasSelection ? selection.to : selection.from;
+    
     // Create Ask Goose payload using the same structured format as other AI requests
     const askGoosePayload: AIBatchTextRevisionRequest = {
       editorSessionId: editorSessionIdRef.current,
@@ -869,10 +905,11 @@ Question about the above document: ${selectedText}`;
         requestType: 'ask_goose',
         commentId: commentId,
         hasSelection: hasSelection,
+        cursorPosition: cursorPosition, // Store cursor position for insertion
       },
     });
     
-  }, [editor, isAiLoading, sendToAI, setComments]);
+  }, [editor, isAiLoading, sendToAI]);
 
   // AI thread processing - moved before handleSendReply to fix initialization order
   const processThreadReply = useCallback(
