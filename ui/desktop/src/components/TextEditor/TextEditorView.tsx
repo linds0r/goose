@@ -865,12 +865,18 @@ Question about the above document: ${selectedText}`;
       }));
     }
 
-    // Send to AI using the regular chat interface (not the batch processing)
+    // Use the structured instruction format like other AI requests
+    const instructionToLLM = `Please respond to the following question or request about a document. Provide a helpful, conversational response - do not format as JSON.
+
+Request: ${prompt}
+
+Please provide a natural, conversational response that directly addresses the user's question or request.`;
+
     sendToAI({
       id: `ask-goose-${generateSimpleUUID()}`,
       role: 'user',
       created: Date.now(),
-      content: [{ type: 'text', text: prompt }],
+      content: [{ type: 'text', text: instructionToLLM }],
       metadata: {
         requestType: 'ask_goose',
         commentId: commentId,
