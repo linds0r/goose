@@ -64,7 +64,7 @@ interface AIBatchTextRevisionRequest {
     instruction: string;
     originalText: string;
   }>;
-  requestType?: 'collaboration' | 'batch_comments' | 'single_comment';
+  requestType?: 'collaboration' | 'batch_comments' | 'single_comment' | 'ask_goose';
 }
 
 interface AISuggestionItem {
@@ -117,11 +117,10 @@ Specific Instructions for 'requestType: "collaboration"':
 - Your response should be an array under the "suggestions" key, where each item is a specific, actionable suggestion formatted as described above.
 - If no specific textual changes are found, you can return an empty "suggestions" array or a single suggestion object linked to the original collaboration 'promptId' with a status and an overall 'explanation' (e.g., "No specific revisions identified at this time.").
 
-For other request types ('batch_comments', 'single_comment'):
+For other request types ('batch_comments', 'single_comment', 'ask_goose'):
 - The 'promptId' in your suggestion MUST match a 'promptId' from the input 'prompts' array.
-- The 'originalText' field is not expected from you in the response for these types, as the frontend already knows the original selected text.
-- Perform the requested 'instruction' on the text associated with its 'promptId' (found via the data-comment-id attribute in 'fullDocumentWithDelineators'), considering surrounding context.
-- Generate a 'revisedText' with your suggested revision.
+- For 'ask_goose' requests: The 'instruction' field contains a question or request about the document. Provide a helpful response in the 'revisedText' field that directly answers the question or fulfills the request. This response should be ready to insert into the document if the user chooses to apply it.
+- For 'batch_comments'/'single_comment': The 'originalText' field is not expected from you in the response for these types, as the frontend already knows the original selected text. Perform the requested 'instruction' on the text associated with its 'promptId' (found via the data-comment-id attribute in 'fullDocumentWithDelineators'), considering surrounding context. Generate a 'revisedText' with your suggested revision.
 
 General Formatting:
 - **Important: Write the 'revisedText' as natural text with actual line breaks, quotes, and other characters as they should appear in the final document. Do not manually escape characters - the JSON parser will handle this automatically.**
@@ -132,6 +131,8 @@ const constructAIInstruction = (payload: AIBatchTextRevisionRequest): string => 
   const collaborationSpecificPreamble =
     payload.requestType === 'collaboration'
       ? `This is a 'collaboration' request. Please review the entire document. For EACH specific textual change you identify (e.g., grammar, spelling, clarity), follow the 'collaboration' output guidelines in the CRITICAL JSON structure section below: provide a NEW unique 'promptId', the EXACT 'originalText' you're targeting, and your 'revisedText'.`
+      : payload.requestType === 'ask_goose'
+      ? `This is an 'ask_goose' request. The user is asking a question or making a request about the document. Provide a helpful response in the 'revisedText' field that directly answers the question or fulfills the request. The response should be ready to insert into the document if the user chooses to apply it.`
       : `This is a '${payload.requestType}' request. For each prompt in the input, provide a suggestion linked to the original 'promptId'.`;
 
   return `Please process the following batch request for a text editor.
@@ -354,7 +355,6 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       // Check if this is a thread reply response - handle completely separately
       const metadata = aiResponseObject.metadata;
       const isThreadReply = metadata?.requestType === 'thread_reply';
-      const isAskGoose = metadata?.requestType === 'ask_goose';
 
       // Also check if content looks like conversational text (not JSON) as backup detection
       const looksLikeJSON =
@@ -366,28 +366,6 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         rawTextContent.length > 50 &&
         !rawTextContent.includes('"suggestions"') &&
         !rawTextContent.includes('"promptId"');
-
-      // Handle Ask Goose responses (conversational, not JSON)
-      if (isAskGoose) {
-        const commentId = metadata?.commentId;
-        const askGooseResponse = rawTextContent;
-
-        if (commentId && askGooseResponse) {
-          setComments((prev) => {
-            const updated = { ...prev };
-            if (updated[commentId]) {
-              updated[commentId] = {
-                ...updated[commentId],
-                status: 'suggestion_ready',
-                aiSuggestion: askGooseResponse,
-                explanation: 'Goose Response',
-              };
-            }
-            return updated;
-          });
-        }
-        return; // Exit early for Ask Goose responses
-      }
 
       // If metadata is missing but content looks conversational, we need to find the commentId differently
       // This is a fallback for when metadata gets lost in the pipeline
@@ -865,12 +843,22 @@ Question about the above document: ${selectedText}`;
       }));
     }
 
-    // Use the structured instruction format like other AI requests
-    const instructionToLLM = `Please respond to the following question or request about a document. Provide a helpful, conversational response - do not format as JSON.
+    // Create Ask Goose payload using the same structured format as other AI requests
+    const askGoosePayload: AIBatchTextRevisionRequest = {
+      editorSessionId: editorSessionIdRef.current,
+      fullDocumentWithDelineators: editor.getHTML(),
+      prompts: [
+        {
+          promptId: commentId,
+          instruction: prompt, // The full prompt (either document or context+question)
+          originalText: hasSelection ? editor.state.doc.textBetween(selection.from, selection.to) : 'Entire Document',
+        },
+      ],
+      requestType: 'ask_goose', // Add ask_goose as a request type
+    };
 
-Request: ${prompt}
-
-Please provide a natural, conversational response that directly addresses the user's question or request.`;
+    // Use the same structured instruction format as other AI features
+    const instructionToLLM = constructAIInstruction(askGoosePayload);
 
     sendToAI({
       id: `ask-goose-${generateSimpleUUID()}`,
