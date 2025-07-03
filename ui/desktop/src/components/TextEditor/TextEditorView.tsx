@@ -313,7 +313,47 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       LineSpacing,
       TextTransform,
     ],
-    content: `<h2>Goose Text Editor</h2><p>Create documents with integrated AI using comment bubbles instead of a chatbot.</p><p><strong>Using the AI:</strong></p><p>To use the AI assistant, simply write your content in the document and add comments where you want AI help. When you add a comment, you can ask the AI to generate new content, revise existing text, or provide suggestions for that specific location. The AI will respond within the comment bubble, and you can choose whether to keep, modify, or delete both your original text and the AI's suggestions. You have full control over what stays in your document.</p><p><strong>Using AI for Revision:</strong></p><ol><li><strong>Select Text:</strong> Highlight text for AI revision.</li><li><strong>Add Comment:</strong> Attach your instruction (e.g., "Shorten," "Make persuasive").</li><li><strong>Process & Review:</strong><ul><li>Submit comments.</li><li>AI suggestions appear in the comment bubble.</li><li>Preview with "Show Inline": <s>original text</s>, <strong><em>new text</em></strong>.</li><li>Click "Apply" to accept.</li></ul></li></ol><p><strong>Test the bullet list:</strong></p><ul><li>First bullet point</li><li>Second bullet point</li><li>Third bullet point</li></ul><p>Try it out the comment feature on this text, or start typing your own content!</p>`,
+    content: `<h1>Welcome to Goose Text Editor</h1>
+<p>A powerful document editor with integrated AI assistance. Get help with writing, editing, and improving your content using two main AI features:</p>
+
+<h2>🤖 AI Assist</h2>
+<p><strong>Get targeted help with specific text or sections</strong></p>
+<ul>
+<li><strong>Select text</strong> you want help with (or place cursor anywhere)</li>
+<li><strong>Click "AI Assist"</strong> in the toolbar or press right-click → AI Assist</li>
+<li><strong>Add your instruction</strong> in the comment bubble (e.g., "Make this more persuasive", "Fix grammar", "Simplify this")</li>
+<li><strong>Click the send button</strong> to get AI suggestions</li>
+<li><strong>Preview changes</strong> with "Show Inline" to see original vs. suggested text</li>
+<li><strong>Apply or reject</strong> suggestions as needed</li>
+</ul>
+
+<h2>✨ AI Refine</h2>
+<p><strong>Get comprehensive feedback on your entire document</strong></p>
+<ul>
+<li><strong>Click "AI Refine"</strong> in the toolbar or right-click → AI Refine</li>
+<li><strong>AI analyzes your whole document</strong> for grammar, clarity, structure, and flow</li>
+<li><strong>Multiple suggestions appear</strong> as comment bubbles throughout your document</li>
+<li><strong>Review each suggestion</strong> individually and choose what to keep</li>
+<li><strong>Get explanations</strong> for why changes were suggested</li>
+</ul>
+
+<h2>💬 Comment Conversations</h2>
+<p>Have back-and-forth conversations with AI about specific suggestions:</p>
+<ul>
+<li><strong>Click on any comment bubble</strong> to expand the conversation</li>
+<li><strong>Ask follow-up questions</strong> like "Can you make it shorter?" or "What about a different approach?"</li>
+<li><strong>Get clarifications</strong> on why certain changes were suggested</li>
+</ul>
+
+<h2>🎯 Quick Tips</h2>
+<ul>
+<li><strong>Right-click anywhere</strong> for context menu with AI options</li>
+<li><strong>Use "Send to AI"</strong> to process multiple comments at once</li>
+<li><strong>Drag the sidebar</strong> to resize the comments panel</li>
+<li><strong>All changes are optional</strong> - you have full control over your document</li>
+</ul>
+
+<p><em>Try selecting this text and clicking "AI Assist" to see how it works, or click "AI Refine" to get feedback on this entire welcome message!</em></p>`,
     editorProps: {
       attributes: {
         class: 'google-docs-editor focus:outline-none',
