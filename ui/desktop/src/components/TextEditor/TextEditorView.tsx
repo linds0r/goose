@@ -320,8 +320,9 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
 <p><strong>Get targeted help with specific text or sections</strong></p>
 <ul>
 <li><strong>Select text</strong> you want help with (or place cursor anywhere)</li>
-<li><strong>Click "AI Assist"</strong> in the toolbar or press right-click → AI Assist</li>
-<li><strong>Add your instruction</strong> in the comment bubble (e.g., "Make this more persuasive", "Fix grammar", "Simplify this")</li>
+<li><strong>Click "AI Assist"</strong> in the toolbar or right-click → AI Assist</li>
+<li><strong>Add your instruction</strong> in the comment bubble (e.g., "Write a PRD that does X," "Simplify this paragraph," "Tell me how to improve this document")</li>
+<li><strong>Click the save button</strong> to batch multiple comments</li>
 <li><strong>Click the send button</strong> to get AI suggestions</li>
 <li><strong>Preview changes</strong> with "Show Inline" to see original vs. suggested text</li>
 <li><strong>Apply or reject</strong> suggestions as needed</li>
@@ -348,12 +349,12 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
 <h2>🎯 Quick Tips</h2>
 <ul>
 <li><strong>Right-click anywhere</strong> for context menu with AI options</li>
-<li><strong>Use "Send to AI"</strong> to process multiple comments at once</li>
+<li><strong>Save multiple comments</strong> and then "Send to AI"</li>
 <li><strong>Drag the sidebar</strong> to resize the comments panel</li>
 <li><strong>All changes are optional</strong> - you have full control over your document</li>
 </ul>
 
-<p><em>Try selecting this text and clicking "AI Assist" to see how it works, or click "AI Refine" to get feedback on this entire welcome message!</em></p>`,
+<p><strong>Try selecting this text and clicking "AI Assist" to see how it works, or click "AI Refine" to get feedback on this entire welcome message!</strong></p>`,
     editorProps: {
       attributes: {
         class: 'google-docs-editor focus:outline-none',
