@@ -32,7 +32,7 @@ import {
   Superscript as SuperscriptIcon,
   Subscript as SubscriptIcon,
   Eraser,
-  MessageCircleQuestion,
+  Sparkles,
 } from 'lucide-react';
 
 import { Comment } from './DocumentTypes';
@@ -50,9 +50,8 @@ interface EditorToolbarProps {
   setView: (view: View, viewOptions?: ViewOptions) => void;
   comments: Record<string, Comment>;
   onApplyCommentHighlight: (details: SelectionDetails) => void;
-  onTriggerAICollaboration: () => void; // New prop to trigger full document-wide feedback // New prop
+  onTriggerAIRefine: () => void; // Renamed from onTriggerAICollaboration
   onSendAllToAI: () => void;
-  onAskGoose: () => void; // NEW: Ask Goose functionality
   isAiLoading: boolean;
 }
 
@@ -61,9 +60,8 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
   setView,
   comments,
   onApplyCommentHighlight,
-  onTriggerAICollaboration, // Fixed: Added missing prop to destructuring
+  onTriggerAIRefine, // Renamed from onTriggerAICollaboration
   onSendAllToAI,
-  onAskGoose, // NEW: Ask Goose functionality
   isAiLoading,
 }) => {
   if (!editor) {
@@ -71,23 +69,26 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
   }
 
   const addCommentHighlight = () => {
-    if (!editor || editor.state.selection.empty) {
-      return; // Don't do anything if there's no selection or editor isn't available
+    if (!editor) {
+      return; // Don't do anything if editor isn't available
     }
 
     const { from, to } = editor.state.selection;
-    const selectedText = editor.state.doc.textBetween(from, to);
+    const hasSelection = !editor.state.selection.empty;
+    const selectedText = hasSelection ? editor.state.doc.textBetween(from, to) : '';
     const commentId = `comment-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`; // Unique ID
 
-    // 1. Apply the mark to the editor for visual highlighting
-    editor.chain().focus().setCommentHighlight({ commentId }).run();
+    if (hasSelection) {
+      // 1. Apply the mark to the editor for visual highlighting
+      editor.chain().focus().setCommentHighlight({ commentId }).run();
+    }
 
     // 2. Call the callback to create the comment object in TextEditorView's state
-    //    and open the interaction panel.
+    //    For no selection, use cursor position (AI Assist can work without selection)
     onApplyCommentHighlight({
-      from,
-      to,
-      selectedText,
+      from: hasSelection ? from : from, // Use cursor position when no selection
+      to: hasSelection ? to : from,     // Use cursor position when no selection  
+      selectedText: selectedText,       // Empty string when no selection
       commentId,
     });
   };
@@ -432,58 +433,81 @@ const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
       {/* AI Features */}
       <button
+        onClick={onTriggerAIRefine}
+        disabled={isAiLoading}
+        style={{
+          width: '100px',
+          height: '32px',
+          borderRadius: '6px',
+          fontWeight: '500',
+          fontSize: '13px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '4px',
+          border: 'none',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          backgroundColor: '#10B981',
+          color: 'white',
+          marginRight: '8px',
+        }}
+        title="AI Refine - Improve entire document"
+      >
+        <Sparkles size={16} />
+        AI Refine
+      </button>
+      <button
         onClick={addCommentHighlight}
-        disabled={editor.state.selection.empty || isAiLoading}
-        title="Add Comment Highlight"
+        disabled={isAiLoading}
+        style={{
+          width: '100px',
+          height: '32px',
+          borderRadius: '6px',
+          fontWeight: '500',
+          fontSize: '13px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '4px',
+          border: 'none',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          backgroundColor: '#3B82F6',
+          color: 'white',
+          marginRight: '8px',
+        }}
+        title="AI Assist - Get help with selected text or document"
       >
         <MessageSquarePlus size={16} />
+        AI Assist
       </button>
-      <button
-        onClick={onAskGoose}
-        disabled={isAiLoading}
-        title={
-          editor.state.selection.empty
-            ? "Ask Goose about this document"
-            : "Ask Goose about selected text (with document context)"
-        }
-        style={{
-          background: !isAiLoading ? '#9333ea' : undefined,
-          color: !isAiLoading ? 'white' : undefined,
-        }}
-      >
-        {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <MessageCircleQuestion size={16} />}
-        <span style={{ marginLeft: '4px', fontSize: '12px' }}>
-          {isAiLoading ? 'Asking...' : 'Ask Goose'}
-        </span>
-      </button>
-      <button
-        onClick={onSendAllToAI}
-        disabled={!canSendToAI || isAiLoading}
-        title="Send All Pending Instructions to AI"
-        style={{
-          background: canSendToAI && !isAiLoading ? '#007bff' : undefined,
-          color: canSendToAI && !isAiLoading ? 'white' : undefined,
-        }}
-      >
-        {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-        <span style={{ marginLeft: '4px', fontSize: '12px' }}>
-          {isAiLoading ? 'Sending...' : `Send (${commentsReadyCount})`}
-        </span>
-      </button>
-      <button
-        onClick={onTriggerAICollaboration}
-        disabled={isAiLoading}
-        title="AI Collaboration (Document-Wide Feedback)"
-        style={{
-          background: !isAiLoading ? '#28a745' : undefined,
-          color: !isAiLoading ? 'white' : undefined,
-        }}
-      >
-        {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-        <span style={{ marginLeft: '4px', fontSize: '12px' }}>
-          {isAiLoading ? 'Processing...' : 'AI Collab'}
-        </span>
-      </button>
+      {canSendToAI && (
+        <button
+          onClick={onSendAllToAI}
+          disabled={isAiLoading}
+          style={{
+            width: '100px',
+            height: '32px',
+            borderRadius: '6px',
+            fontWeight: '500',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '4px',
+            border: 'none',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            backgroundColor: '#F59E0B',
+            color: 'white',
+          }}
+          title={`Send to AI - Process ${commentsReadyCount} pending comment${commentsReadyCount !== 1 ? 's' : ''}`}
+        >
+          {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+          Send to AI
+        </button>
+      )}
     </div>
   );
 };

@@ -9,6 +9,7 @@ import { TextAlign } from './extensions/TextAlign';
 import { Highlight } from './extensions/Highlight';
 import { Link } from './extensions/Link';
 import EditorToolbar from './EditorToolbar';
+import ContextMenu from './ContextMenu';
 import './TextEditor.css';
 import { View, ViewOptions } from '../../App';
 import CommentHighlightMark from './extensions/CommentHighlightMark';
@@ -64,7 +65,7 @@ interface AIBatchTextRevisionRequest {
     instruction: string;
     originalText: string;
   }>;
-  requestType?: 'collaboration' | 'batch_comments' | 'single_comment' | 'ask_goose';
+  requestType?: 'collaboration' | 'batch_comments' | 'single_comment';
 }
 
 interface AISuggestionItem {
@@ -117,10 +118,9 @@ Specific Instructions for 'requestType: "collaboration"':
 - Your response should be an array under the "suggestions" key, where each item is a specific, actionable suggestion formatted as described above.
 - If no specific textual changes are found, you can return an empty "suggestions" array or a single suggestion object linked to the original collaboration 'promptId' with a status and an overall 'explanation' (e.g., "No specific revisions identified at this time.").
 
-For other request types ('batch_comments', 'single_comment', 'ask_goose'):
+For other request types ('batch_comments', 'single_comment'):
 - The 'promptId' in your suggestion MUST match a 'promptId' from the input 'prompts' array.
-- For 'ask_goose' requests: The 'instruction' field contains a question or request about the document. Provide a helpful response in the 'revisedText' field that directly answers the question or fulfills the request. This response should be ready to insert into the document if the user chooses to apply it.
-- For 'batch_comments'/'single_comment': The 'originalText' field is not expected from you in the response for these types, as the frontend already knows the original selected text. Perform the requested 'instruction' on the text associated with its 'promptId' (found via the data-comment-id attribute in 'fullDocumentWithDelineators'), considering surrounding context. Generate a 'revisedText' with your suggested revision.
+- The 'originalText' field is not expected from you in the response for these types, as the frontend already knows the original selected text. Perform the requested 'instruction' on the text associated with its 'promptId' (found via the data-comment-id attribute in 'fullDocumentWithDelineators'), considering surrounding context. Generate a 'revisedText' with your suggested revision.
 
 General Formatting:
 - **Important: Write the 'revisedText' as natural text with actual line breaks, quotes, and other characters as they should appear in the final document. Do not manually escape characters - the JSON parser will handle this automatically.**
@@ -131,8 +131,6 @@ const constructAIInstruction = (payload: AIBatchTextRevisionRequest): string => 
   const collaborationSpecificPreamble =
     payload.requestType === 'collaboration'
       ? `This is a 'collaboration' request. Please review the entire document. For EACH specific textual change you identify (e.g., grammar, spelling, clarity), follow the 'collaboration' output guidelines in the CRITICAL JSON structure section below: provide a NEW unique 'promptId', the EXACT 'originalText' you're targeting, and your 'revisedText'.`
-      : payload.requestType === 'ask_goose'
-      ? `This is an 'ask_goose' request. The user is asking a question or making a request about the document. Provide a helpful response in the 'revisedText' field that directly answers the question or fulfills the request. The response should be ready to insert into the document if the user chooses to apply it.`
       : `This is a '${payload.requestType}' request. For each prompt in the input, provide a suggestion linked to the original 'promptId'.`;
 
   return `Please process the following batch request for a text editor.
@@ -197,6 +195,14 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
   const [isBubbleFocused, setIsBubbleFocused] = useState<boolean>(false);
   const [sidebarWidth, setSidebarWidth] = useState<number>(350); // New state for sidebar width
   const [isResizing, setIsResizing] = useState<boolean>(false); // New state for resize mode
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    visible: boolean;
+    hasSelection: boolean;
+  }>({ x: 0, y: 0, visible: false, hasSelection: false });
 
   const editorSessionIdRef = useRef<string>(`text-editor-session-${generateSimpleUUID()}`);
 
@@ -355,76 +361,8 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       // Check if this is a thread reply response - handle completely separately
       const metadata = aiResponseObject.metadata;
       const isThreadReply = metadata?.requestType === 'thread_reply';
-      const isAskGoose = metadata?.requestType === 'ask_goose';
 
-      // Handle Ask Goose responses by inserting directly into document
-      if (isAskGoose) {
-        const cursorPosition = metadata?.cursorPosition;
-        
-        // Parse the JSON response to get the revisedText
-        let parsedResponse: AIBatchTextRevisionResponse | null = null;
-        
-        try {
-          // Use the same JSON parsing logic as other responses
-          const jsonRegex = new RegExp('```json\\s*([\\s\\S]*?)\\s*```');
-          const match = rawTextContent.match(jsonRegex);
-          let cleanedJsonString = rawTextContent;
-
-          if (match && match[1]) {
-            cleanedJsonString = match[1].trim();
-          } else {
-            cleanedJsonString = rawTextContent.trim();
-            
-            if (!cleanedJsonString.startsWith('{') && !cleanedJsonString.startsWith('[')) {
-              const jsonStartIndex = cleanedJsonString.indexOf('{');
-              if (jsonStartIndex !== -1) {
-                const fromFirstBrace = cleanedJsonString.substring(jsonStartIndex);
-                let braceCount = 0;
-                let jsonEndIndex = -1;
-                
-                for (let i = 0; i < fromFirstBrace.length; i++) {
-                  if (fromFirstBrace[i] === '{') {
-                    braceCount++;
-                  } else if (fromFirstBrace[i] === '}') {
-                    braceCount--;
-                    if (braceCount === 0) {
-                      jsonEndIndex = i + 1;
-                      break;
-                    }
-                  }
-                }
-                
-                if (jsonEndIndex !== -1) {
-                  cleanedJsonString = fromFirstBrace.substring(0, jsonEndIndex);
-                }
-              }
-            }
-          }
-          
-          parsedResponse = JSON.parse(cleanedJsonString);
-        } catch (e) {
-          console.error('Failed to parse Ask Goose response as JSON:', e);
-          return;
-        }
-
-        // Insert the response directly into the document
-        if (parsedResponse?.suggestions?.[0]?.revisedText && editor && typeof cursorPosition === 'number') {
-          const responseText = parsedResponse.suggestions[0].revisedText;
-          
-          // Insert the response at the stored cursor position with proper formatting
-          editor
-            .chain()
-            .focus()
-            .setTextSelection({ from: cursorPosition, to: cursorPosition })
-            .insertContent([
-              { type: 'paragraph', content: [] }, // Add a line break
-              { type: 'paragraph', content: [{ type: 'text', text: responseText }] }
-            ])
-            .run();
-        }
-        
-        return; // Exit early for Ask Goose responses
-      }
+      console.log('handleAIBatchResponse - metadata:', metadata);
 
       // Also check if content looks like conversational text (not JSON) as backup detection
       const looksLikeJSON =
@@ -807,7 +745,24 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
     }
   }, [comments, editor, setComments]);
 
-  const handleTriggerAICollaboration = useCallback(() => {
+  // Context menu handlers
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const hasSelection = !editor?.state.selection.empty;
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      visible: true,
+      hasSelection,
+    });
+  }, [editor]);
+
+  const handleCloseContextMenu = useCallback(() => {
+    setContextMenu(prev => ({ ...prev, visible: false }));
+  }, []);
+
+  // Context menu action handlers
+  const handleContextAIRefine = useCallback(() => {
     if (!editor || isAiLoading) return;
 
     const fullDocumentContent = editor.getHTML();
@@ -820,19 +775,166 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
         {
           promptId: collaborationPromptId,
           instruction:
-            "Please review the entire document. For EACH specific textual change (e.g., grammar, spelling, clarity), follow the 'collaboration' output guidelines: provide a NEW unique 'promptId', the EXACT 'originalText' you're targeting, and your 'revisedText'. Also include an 'explanation' for each change. If no changes, respond for this promptId with an explanation.",
-          originalText: '', // No specific selected text for the main collab task
+            "Please review the entire document and provide comprehensive feedback. For EACH specific textual change (e.g., grammar, spelling, clarity, word choice), follow the 'collaboration' output guidelines: provide a NEW unique 'promptId', the EXACT 'originalText' you're targeting, and your 'revisedText'. Also include an 'explanation' for each change. Additionally, provide suggestions for document structure, effectiveness, flow, and overall improvements. If no changes are needed, respond for this promptId with an explanation.",
+          originalText: '', // No specific selected text for the main refine task
+        },
+      ],
+      requestType: 'collaboration',
+    };
+
+    const instructionToLLM = constructAIInstruction(collaborationPayload);
+    sendToAI({
+      id: `editor-refine-${generateSimpleUUID()}`,
+      role: 'user',
+      created: Date.now(),
+      content: [{ type: 'text', text: instructionToLLM }],
+      metadata: {
+        requestType: 'collaboration',
+        originalCollaborationPromptId: collaborationPromptId, // Keep for context in handleAIBatchResponse if ever needed
+      },
+    });
+  }, [editor, isAiLoading, sendToAI]);
+
+  const handleApplyCommentHighlight = useCallback(
+    (selectionDetails: SelectionDetails) => {
+      const { from, to, selectedText, commentId } = selectionDetails;
+      if (!editor) return;
+      setComments((prev) => ({
+        ...prev,
+        [commentId]: {
+          id: commentId,
+          textRange: { from, to },
+          selectedText: selectedText,
+          instruction: '',
+          status: 'pending',
+          timestamp: new Date(),
+          inlineVisible: false,
+          replies: [], // Initialize empty replies array
+          isThreadExpanded: false, // Initialize thread state
+          lastActivity: new Date(), // Initialize activity tracking
+        },
+      }));
+      setActiveCommentId(commentId);
+      setCurrentInstructionInput('');
+      setIsInteractionPanelVisible(false);
+    },
+    [
+      editor,
+      setComments,
+      setActiveCommentId,
+      setCurrentInstructionInput,
+      setIsInteractionPanelVisible,
+    ]
+  );
+
+  const handleContextAIAssist = useCallback(() => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    const hasSelection = !editor.state.selection.empty;
+    const selectedText = hasSelection ? editor.state.doc.textBetween(from, to) : '';
+    const commentId = `comment-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    if (hasSelection) {
+      editor.chain().focus().setCommentHighlight({ commentId }).run();
+    }
+
+    handleApplyCommentHighlight({
+      from: hasSelection ? from : from,
+      to: hasSelection ? to : from,
+      selectedText: selectedText,
+      commentId,
+    });
+  }, [editor, handleApplyCommentHighlight]);
+
+  const handleContextCut = useCallback(() => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    if (!editor.state.selection.empty) {
+      const text = editor.state.doc.textBetween(from, to);
+      navigator.clipboard.writeText(text);
+      editor.chain().focus().deleteSelection().run();
+    }
+  }, [editor]);
+
+  const handleContextCopy = useCallback(() => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    if (!editor.state.selection.empty) {
+      const text = editor.state.doc.textBetween(from, to);
+      navigator.clipboard.writeText(text);
+    }
+  }, [editor]);
+
+  const handleContextPaste = useCallback(async () => {
+    if (!editor) return;
+    try {
+      const text = await navigator.clipboard.readText();
+      editor.chain().focus().insertContent(text).run();
+    } catch (err) {
+      console.warn('Failed to read clipboard:', err);
+    }
+  }, [editor]);
+
+  const handleContextAddLink = useCallback(() => {
+    if (!editor) return;
+    const url = window.prompt('Enter URL:');
+    if (url) {
+      editor.chain().focus().setLink({ href: url }).run();
+    }
+  }, [editor]);
+
+  const handleContextHighlight = useCallback(() => {
+    if (!editor) return;
+    editor.chain().focus().toggleHighlight({ color: '#ffff00' }).run();
+  }, [editor]);
+
+  const handleContextFindReplace = useCallback(() => {
+    // For now, just show an alert - this would need a proper find/replace dialog
+    alert('Find & Replace functionality would be implemented here');
+  }, []);
+
+  const handleContextDocumentStats = useCallback(() => {
+    if (!editor) return;
+    const doc = editor.state.doc;
+    const text = doc.textContent;
+    const words = text.trim().split(/\s+/).filter(word => word.length > 0).length;
+    const characters = text.length;
+    const charactersNoSpaces = text.replace(/\s/g, '').length;
+    const paragraphs = doc.content.childCount;
+
+    alert(`Document Statistics:
+Words: ${words}
+Characters: ${characters}
+Characters (no spaces): ${charactersNoSpaces}
+Paragraphs: ${paragraphs}`);
+  }, [editor]);
+
+  const handleTriggerAIRefine = useCallback(() => {
+    if (!editor || isAiLoading) return;
+
+    const fullDocumentContent = editor.getHTML();
+    const collaborationPromptId = `collab-${generateSimpleUUID()}`; // Still useful for tracking the request itself if needed
+
+    const collaborationPayload: AIBatchTextRevisionRequest = {
+      editorSessionId: editorSessionIdRef.current,
+      fullDocumentWithDelineators: fullDocumentContent,
+      prompts: [
+        {
+          promptId: collaborationPromptId,
+          instruction:
+            "Please review the entire document and provide comprehensive feedback. For EACH specific textual change (e.g., grammar, spelling, clarity, word choice), follow the 'collaboration' output guidelines: provide a NEW unique 'promptId', the EXACT 'originalText' you're targeting, and your 'revisedText'. Also include an 'explanation' for each change. Additionally, provide suggestions for document structure, effectiveness, flow, and overall improvements. If no changes are needed, respond for this promptId with an explanation.",
+          originalText: '', // No specific selected text for the main refine task
         },
       ],
       requestType: 'collaboration',
     };
 
     // REMOVED setComments call that created the initial collaboration comment bubble
-    // console.log(`Triggering AI Collaboration with master promptId: ${collaborationPromptId}`);
+    // console.log(`Triggering AI Refine with master promptId: ${collaborationPromptId}`);
 
     const instructionToLLM = constructAIInstruction(collaborationPayload);
     sendToAI({
-      id: `editor-collab-${generateSimpleUUID()}`,
+      id: `editor-refine-${generateSimpleUUID()}`,
       role: 'user',
       created: Date.now(),
       content: [{ type: 'text', text: instructionToLLM }],
@@ -843,73 +945,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
     });
   }, [editor, isAiLoading, sendToAI]); // setComments and constructAIInstruction are stable
 
-  // NEW: Ask Goose functionality - writes directly to document
-  const handleAskGoose = useCallback(() => {
-    if (!editor || isAiLoading) return;
 
-    const { selection } = editor.state;
-    const hasSelection = !selection.empty;
-    
-    let prompt: string;
-    let commentId: string;
-    
-    if (hasSelection) {
-      // Selected text mode: Use selection as prompt, document as context
-      const selectedText = editor.state.doc.textBetween(selection.from, selection.to);
-      const documentText = editor.getText();
-      
-      prompt = `Context: Here is the full document for reference:
-
-${documentText}
-
----
-
-Question about the above document: ${selectedText}`;
-      
-      commentId = `ask-goose-selection-${generateSimpleUUID()}`;
-      
-    } else {
-      // No selection mode: Use entire document as prompt
-      const documentText = editor.getText();
-      
-      prompt = documentText;
-      commentId = `ask-goose-document-${generateSimpleUUID()}`;
-    }
-
-    // Store the cursor position where we want to insert the response
-    const cursorPosition = hasSelection ? selection.to : selection.from;
-    
-    // Create Ask Goose payload using the same structured format as other AI requests
-    const askGoosePayload: AIBatchTextRevisionRequest = {
-      editorSessionId: editorSessionIdRef.current,
-      fullDocumentWithDelineators: editor.getHTML(),
-      prompts: [
-        {
-          promptId: commentId,
-          instruction: prompt, // The full prompt (either document or context+question)
-          originalText: hasSelection ? editor.state.doc.textBetween(selection.from, selection.to) : 'Entire Document',
-        },
-      ],
-      requestType: 'ask_goose', // Add ask_goose as a request type
-    };
-
-    // Use the same structured instruction format as other AI features
-    const instructionToLLM = constructAIInstruction(askGoosePayload);
-
-    sendToAI({
-      id: `ask-goose-${generateSimpleUUID()}`,
-      role: 'user',
-      created: Date.now(),
-      content: [{ type: 'text', text: instructionToLLM }],
-      metadata: {
-        requestType: 'ask_goose',
-        commentId: commentId,
-        hasSelection: hasSelection,
-        cursorPosition: cursorPosition, // Store cursor position for insertion
-      },
-    });
-    
-  }, [editor, isAiLoading, sendToAI]);
 
   // AI thread processing - moved before handleSendReply to fix initialization order
   const processThreadReply = useCallback(
@@ -1015,38 +1051,6 @@ Question about the above document: ${selectedText}`;
       return updated;
     });
   }, []);
-
-  const handleApplyCommentHighlight = useCallback(
-    (selectionDetails: SelectionDetails) => {
-      const { from, to, selectedText, commentId } = selectionDetails;
-      if (!editor) return;
-      setComments((prev) => ({
-        ...prev,
-        [commentId]: {
-          id: commentId,
-          textRange: { from, to },
-          selectedText: selectedText,
-          instruction: '',
-          status: 'pending',
-          timestamp: new Date(),
-          inlineVisible: false,
-          replies: [], // Initialize empty replies array
-          isThreadExpanded: false, // Initialize thread state
-          lastActivity: new Date(), // Initialize activity tracking
-        },
-      }));
-      setActiveCommentId(commentId);
-      setCurrentInstructionInput('');
-      setIsInteractionPanelVisible(false);
-    },
-    [
-      editor,
-      setComments,
-      setActiveCommentId,
-      setCurrentInstructionInput,
-      setIsInteractionPanelVisible,
-    ]
-  );
 
   const handleBubbleInstructionChange = useCallback(
     (newInstruction: string) => {
@@ -1513,9 +1517,8 @@ Question about the above document: ${selectedText}`;
         setView={setView}
         comments={comments}
         onApplyCommentHighlight={handleApplyCommentHighlight}
-        onTriggerAICollaboration={handleTriggerAICollaboration}
+        onTriggerAIRefine={handleTriggerAIRefine}
         onSendAllToAI={handleTriggerAIBatchProcessing}
-        onAskGoose={handleAskGoose}
         isAiLoading={isAiLoading}
       />
     );
@@ -1534,7 +1537,11 @@ Question about the above document: ${selectedText}`;
       {getToolbar()}
       <div style={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
         <div style={{ flexGrow: 1, overflowY: 'auto', position: 'relative' }}>
-          <EditorContent editor={editor} className="editor-content-area" />
+          <EditorContent 
+            editor={editor} 
+            className="editor-content-area" 
+            onContextMenu={handleContextMenu}
+          />
         </div>
 
         {/* Resize Handle */}
@@ -1607,6 +1614,25 @@ Question about the above document: ${selectedText}`;
           ))}
         </div>
       </div>
+      
+      {/* Context Menu */}
+      <ContextMenu
+        x={contextMenu.x}
+        y={contextMenu.y}
+        isVisible={contextMenu.visible}
+        hasSelection={contextMenu.hasSelection}
+        onClose={handleCloseContextMenu}
+        onAIRefine={handleContextAIRefine}
+        onAIAssist={handleContextAIAssist}
+        onCut={handleContextCut}
+        onCopy={handleContextCopy}
+        onPaste={handleContextPaste}
+        onAddLink={handleContextAddLink}
+        onHighlight={handleContextHighlight}
+        onFindReplace={handleContextFindReplace}
+        onDocumentStats={handleContextDocumentStats}
+      />
+      
       {/* Old interaction panel logic can be removed if bubbles are the sole method */}
       {/* {shouldShowOldInstructionArea && ( ... )} */}
     </div>
