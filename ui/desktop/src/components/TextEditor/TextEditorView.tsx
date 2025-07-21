@@ -29,6 +29,7 @@ import { getApiUrl } from '../../config';
 import type { Message } from '../../types/message';
 import { Comment, Reply, AIThreadRequest } from './DocumentTypes';
 import CommentBubble from './CommentBubble';
+import { generateSmartDiff, segmentsToEditorContent } from './utils/smartDiff';
 
 // Walk the ProseMirror document and return real positions for the first occurrence of `searchText`.
 const findTextRangeInPM = (
@@ -1363,36 +1364,74 @@ Paragraphs: ${paragraphs}`);
       }
 
       if (!c.inlineVisible) {
-        editor
-          .chain()
-          .focus()
-          .setTextSelection({ from: finalFrom, to: finalTo })
-          .setMark('diffDel')
-          .setTextSelection({ from: finalTo, to: finalTo })
-          .insertContent([
-            { type: 'text', text: ' ' },
-            {
-              type: 'text',
-              text: c.aiSuggestion,
-              marks: [{ type: 'diffAdd' }],
-            },
-          ])
-          .run();
+        // Generate smart diff to determine how to display the changes
+        const diffResult = generateSmartDiff(c.selectedText, c.aiSuggestion);
+        
+        console.log('Smart diff result:', diffResult);
+        
+        if (diffResult.shouldUseGranular && diffResult.segments.length > 1) {
+          // Use granular diff - show only the specific changes
+          const content = segmentsToEditorContent(diffResult.segments);
+          
+          editor
+            .chain()
+            .focus()
+            .setTextSelection({ from: finalFrom, to: finalTo })
+            .deleteSelection()
+            .insertContent(content)
+            .run();
+        } else {
+          // Fall back to full sentence replacement for complex changes
+          editor
+            .chain()
+            .focus()
+            .setTextSelection({ from: finalFrom, to: finalTo })
+            .setMark('diffDel')
+            .setTextSelection({ from: finalTo, to: finalTo })
+            .insertContent([
+              { type: 'text', text: ' ' },
+              {
+                type: 'text',
+                text: c.aiSuggestion,
+                marks: [{ type: 'diffAdd' }],
+              },
+            ])
+            .run();
+        }
+        
         setComments((prev) => ({
           ...prev,
           [commentId]: { ...prev[commentId], inlineVisible: true },
         }));
       } else {
-        const suggestionStartPosition = finalTo + 1;
-        const suggestionEndPosition = suggestionStartPosition + c.aiSuggestion.length;
+        // Hide inline diff - need to restore original text
+        // This is more complex with granular diff, so we'll restore the original text
+        // and remove any diff marks
+        
+        // First, find the current range that includes all diff marks
+        let diffStart = finalFrom;
+        let diffEnd = finalTo;
+        
+        // Scan for diff marks to find the full range
+        editor.state.doc.descendants((node, pos) => {
+          if (node.isText && node.marks.some(mark => 
+            mark.type.name === 'diffDel' || mark.type.name === 'diffAdd'
+          )) {
+            diffStart = Math.min(diffStart, pos);
+            diffEnd = Math.max(diffEnd, pos + node.textContent.length);
+          }
+          return true;
+        });
+        
+        // Replace the entire diff range with the original text
         editor
           .chain()
           .focus()
-          .setTextSelection({ from: finalTo, to: suggestionEndPosition })
+          .setTextSelection({ from: diffStart, to: diffEnd })
           .deleteSelection()
-          .setTextSelection({ from: finalFrom, to: finalTo })
-          .unsetMark('diffDel')
+          .insertContent(c.selectedText)
           .run();
+        
         setComments((prev) => ({
           ...prev,
           [commentId]: { ...prev[commentId], inlineVisible: false },
@@ -1462,16 +1501,32 @@ Paragraphs: ${paragraphs}`);
       const suggestionText = commentToApply.aiSuggestion;
 
       if (commentToApply.inlineVisible) {
-        const suggestionStartPosition = finalTo + 1;
-        const suggestionEndPosition = suggestionStartPosition + suggestionText.length;
+        // If inline is visible, we need to find and remove all diff marks
+        // This handles both granular and full-sentence diffs
+        let diffStart = finalFrom;
+        let diffEnd = finalTo;
+        
+        // Scan for diff marks to find the full range
+        editor.state.doc.descendants((node, pos) => {
+          if (node.isText && node.marks.some(mark => 
+            mark.type.name === 'diffDel' || mark.type.name === 'diffAdd'
+          )) {
+            diffStart = Math.min(diffStart, pos);
+            diffEnd = Math.max(diffEnd, pos + node.textContent.length);
+          }
+          return true;
+        });
+        
+        // Clear the diff display first
         editor
           .chain()
           .focus()
-          .setTextSelection({ from: finalTo, to: suggestionEndPosition })
+          .setTextSelection({ from: diffStart, to: diffEnd })
           .deleteSelection()
-          .setTextSelection({ from: finalFrom, to: finalTo })
-          .unsetMark('diffDel')
           .run();
+          
+        // Update the final range for the replacement
+        finalTo = finalFrom;
       }
 
       if (
