@@ -89,9 +89,25 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
     }
   };
 
+  // Determine visual state for styling
+  const getCommentStateClass = () => {
+    switch (comment.status) {
+      case 'suggestion_ready':
+        return 'comment-bubble-pending';
+      case 'applied':
+        return 'comment-bubble-applied';
+      case 'processing':
+        return 'comment-bubble-processing';
+      case 'error':
+        return 'comment-bubble-error';
+      default:
+        return '';
+    }
+  };
+
   return (
     <div
-      className={`comment-bubble ${isActive ? 'active' : ''}`}
+      className={`comment-bubble ${isActive ? 'active' : ''} ${getCommentStateClass()}`}
       onClick={handleBubbleClick}
       style={style}
     >
@@ -109,7 +125,7 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
       {/* Selected text display */}
       <div className="comment-bubble-selected-text">"{comment.selectedText}"</div>
 
-      {/* Instruction input/display */}
+      {/* Instruction input/display - only show for user-initiated comments */}
       {canEditInstruction ? (
         <div className="comment-bubble-instruction">
           <textarea
@@ -123,30 +139,28 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
           />
         </div>
       ) : (
-        comment.instruction && (
+        // Only show instruction for user-initiated comments, not AI Refine suggestions
+        comment.instruction && !comment.explanation && (
           <div className="comment-bubble-instruction">
             <strong>Instruction:</strong> {comment.instruction}
           </div>
         )
       )}
 
-      {/* Status and action buttons */}
-      <div className="comment-bubble-header">
-        <span className={`comment-bubble-status ${comment.status}`}>{comment.status}</span>
+      {/* Action buttons for pending comments */}
+      {canEditInstruction && (
         <div className="comment-bubble-actions">
-          {canEditInstruction && (
-            <button
-              onClick={handleInstructionSave}
-              disabled={
-                isGloballyLoadingAI ||
-                isThisCommentProcessing ||
-                (isActive && !currentInstructionForActive.trim())
-              }
-              className="comment-bubble-btn"
-            >
-              Save
-            </button>
-          )}
+          <button
+            onClick={handleInstructionSave}
+            disabled={
+              isGloballyLoadingAI ||
+              isThisCommentProcessing ||
+              (isActive && !currentInstructionForActive.trim())
+            }
+            className="comment-bubble-btn"
+          >
+            Save
+          </button>
           {comment.status === 'pending' && canSendToAI && (
             <button
               onClick={handleSendToAISingle}
@@ -157,18 +171,25 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
             </button>
           )}
         </div>
-      </div>
+      )}
 
       {/* AI suggestion display */}
       {canAcceptSuggestion && comment.aiSuggestion && (
         <div>
-          {comment.explanation && (
-            <div className="comment-bubble-ai-response">
-              <strong>AI's reasoning:</strong> {comment.explanation}
+          {/* Show explanation as a prominent note if it exists and is different from the suggestion */}
+          {comment.explanation && comment.explanation !== comment.aiSuggestion && (
+            <div className="comment-bubble-explanation">
+              <strong>{comment.explanation}</strong>
             </div>
           )}
 
-          <div className="comment-bubble-ai-response">{comment.aiSuggestion}</div>
+          {/* Main suggestion text */}
+          <div className="comment-bubble-ai-response">
+            <div style={{ fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+              Suggested change:
+            </div>
+            {comment.aiSuggestion}
+          </div>
 
           <div className="comment-bubble-actions">
             {canToggleInline && (

@@ -1426,8 +1426,14 @@ Paragraphs: ${paragraphs}`);
           selectedText: suggestionText,
         },
       }));
+      
+      // IMPORTANT: Sync all comment positions after applying a suggestion
+      // This ensures other pending suggestions have accurate positions
+      setTimeout(() => {
+        syncCommentPositions();
+      }, 100);
     },
-    [editor, comments, setComments]
+    [editor, comments, setComments, syncCommentPositions]
   );
 
   useEffect(() => {

@@ -22,7 +22,7 @@ export interface Comment {
   timestamp: Date;
   errorMessage?: string;
   inlineVisible?: boolean; // For showing diffs inline
-  needsMarkApplied?: boolean; // Flag for useEffect to apply mark for new AI collab suggestions
+  markApplied?: boolean; // Track if mark is applied (replaces needsMarkApplied)
   
   // NEW: Thread support
   replies: Reply[];              // Array of threaded replies
