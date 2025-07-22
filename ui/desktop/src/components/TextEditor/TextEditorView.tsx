@@ -30,6 +30,13 @@ import type { Message } from '../../types/message';
 import { Comment, Reply, AIThreadRequest } from './DocumentTypes';
 import CommentBubble from './CommentBubble';
 import { generateSmartDiff, segmentsToEditorContent } from './utils/smartDiff';
+import {
+  findCommentMarkRange,
+  ensureCommentMarkApplied,
+  removeCommentMark,
+  updateAllCommentRanges,
+  validateAndFixCommentMarks,
+} from './utils/markHelpers';
 
 // Walk the ProseMirror document and return real positions for the first occurrence of `searchText`.
 const findTextRangeInPM = (
@@ -253,6 +260,7 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       document.body.style.userSelect = '';
     };
   }, [isResizing, handleMouseMove, handleMouseUp]);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -379,6 +387,17 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       }
     },
   });
+
+  // Mark persistence hook - validate marks on mount and after significant changes
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    
+    // Validate marks on mount and after significant changes
+    const report = validateAndFixCommentMarks(editor, comments);
+    if (report.orphanedMarks.length > 0 || report.missingMarks.length > 0) {
+      console.log('Mark validation report:', report);
+    }
+  }, [editor, comments]);
 
   const handleSetActiveComment = useCallback(
     (commentId: string | null) => {
@@ -615,25 +634,33 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
             !activeEditor.isDestroyed
           ) {
             const range = findTextRangeInPM(activeEditor.state.doc, originalText);
-            const newComment: Comment = {
-              id: promptId,
-              textRange: range,
-              selectedText: originalText,
-              instruction: explanation || 'AI Suggested Revision',
-              status: status === 'success' ? 'suggestion_ready' : 'error',
-              aiSuggestion: revisedText,
-              explanation: explanation, // Store explanation separately
-              timestamp: new Date(),
-              inlineVisible: false,
-              needsMarkApplied: !!range,
-              errorMessage:
-                status === 'error' ? errorMessage || 'Error in AI suggestion' : undefined,
-              replies: [], // Initialize empty replies array
-              isThreadExpanded: false, // Initialize thread state
-              lastActivity: new Date(), // Initialize activity tracking
-            };
-            updatedComments[promptId] = newComment;
             if (range) {
+              // Apply mark immediately
+              ensureCommentMarkApplied(
+                activeEditor,
+                promptId,
+                range.from,
+                range.to
+              );
+              
+              const newComment: Comment = {
+                id: promptId,
+                textRange: range,
+                selectedText: originalText,
+                instruction: explanation || 'AI Suggested Revision',
+                status: status === 'success' ? 'suggestion_ready' : 'error',
+                aiSuggestion: revisedText,
+                explanation: explanation, // Store explanation separately
+                timestamp: new Date(),
+                inlineVisible: false,
+                markApplied: true,
+                errorMessage:
+                  status === 'error' ? errorMessage || 'Error in AI suggestion' : undefined,
+                replies: [], // Initialize empty replies array
+                isThreadExpanded: false, // Initialize thread state
+                lastActivity: new Date(), // Initialize activity tracking
+              };
+              updatedComments[promptId] = newComment;
               console.log(
                 `New AI collab suggestion '${promptId}' created for text: "${originalText}" at range ${range.from}-${range.to}`
               );
@@ -707,85 +734,15 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
     onFinish: (message, reason) => handleAIBatchResponse(message, reason, editor),
   });
 
-  // useEffect to apply marks for new AI-generated comments
-  useEffect(() => {
+  // Position synchronization hook - sync all comment positions after major operations
+  const syncCommentPositions = useCallback(() => {
     if (!editor || editor.isDestroyed) return;
-
-    const commentsThatNeedMarks = Object.values(comments).filter(
-      (c) => c.needsMarkApplied && c.textRange
-    );
-
-    if (commentsThatNeedMarks.length > 0) {
-      const tr = editor.state.tr;
-      let transactionModified = false;
-
-      commentsThatNeedMarks.forEach((comment) => {
-        if (comment.textRange) {
-          try {
-            let markAlreadyExists = false;
-            editor.state.doc.nodesBetween(
-              comment.textRange.from,
-              comment.textRange.to,
-              (node, pos, _parent, _index) => {
-                if (
-                  node.marks.some(
-                    (mark) =>
-                      mark.type.name === 'commentHighlight' && mark.attrs.commentId === comment.id
-                  )
-                ) {
-                  if (
-                    pos <= comment.textRange!.from &&
-                    pos + node.nodeSize >= comment.textRange!.to
-                  ) {
-                    markAlreadyExists = true;
-                    return false; // Stop iteration: mark already exists and covers the range
-                  }
-                }
-                return true; // Continue iteration if mark not found or condition not met
-              }
-            );
-
-            if (!markAlreadyExists) {
-              tr.addMark(
-                comment.textRange.from,
-                comment.textRange.to,
-                editor.schema.marks.commentHighlight.create({
-                  commentId: comment.id,
-                  class: 'comment-highlight',
-                })
-              );
-              transactionModified = true;
-              console.log(
-                `Applied mark for AI comment ${comment.id} at ${comment.textRange.from}-${comment.textRange.to}`
-              );
-            } else {
-              console.log(
-                `Mark for AI comment ${comment.id} at ${comment.textRange.from}-${comment.textRange.to} considered already applied.`
-              );
-            }
-          } catch (e) {
-            console.error(`Error applying mark for comment ${comment.id}:`, e, comment.textRange);
-          }
-        }
-      });
-
-      if (transactionModified) {
-        editor.view.dispatch(tr);
-      }
-
-      setComments((prevComments) => {
-        const updated = { ...prevComments };
-        let commentsWereUpdated = false;
-        commentsThatNeedMarks.forEach((comment) => {
-          if (updated[comment.id] && updated[comment.id].needsMarkApplied) {
-            updated[comment.id] = { ...updated[comment.id], needsMarkApplied: false };
-            commentsWereUpdated = true;
-          }
-        });
-        return commentsWereUpdated ? updated : prevComments;
-      });
-    }
-  }, [comments, editor, setComments]);
+    
+    setComments((prev) => {
+      const updated = updateAllCommentRanges(editor, prev);
+      return updated;
+    });
+  }, [editor]);
 
   // Context menu handlers
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -841,16 +798,25 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
     (selectionDetails: SelectionDetails) => {
       const { from, to, selectedText, commentId } = selectionDetails;
       if (!editor) return;
+      
+      // Apply mark immediately
+      editor.chain()
+        .focus()
+        .setTextSelection({ from, to })
+        .setCommentHighlight({ commentId })
+        .run();
+      
       setComments((prev) => ({
         ...prev,
         [commentId]: {
           id: commentId,
-          textRange: { from, to },
+          textRange: { from, to }, // Store initial position as fallback
           selectedText: selectedText,
           instruction: '',
           status: 'pending',
           timestamp: new Date(),
           inlineVisible: false,
+          markApplied: true, // Track that mark is applied
           replies: [], // Initialize empty replies array
           isThreadExpanded: false, // Initialize thread state
           lastActivity: new Date(), // Initialize activity tracking
@@ -1141,74 +1107,38 @@ Paragraphs: ${paragraphs}`);
   const handleCloseComment = useCallback(
     (commentIdToRemove: string) => {
       if (!editor) return;
-      if (comments[commentIdToRemove]?.inlineVisible && comments[commentIdToRemove]?.textRange) {
+      
+      // If inline diff is visible, clean it up first
+      if (comments[commentIdToRemove]?.inlineVisible) {
         const c = comments[commentIdToRemove];
-        if (c && c.textRange && c.aiSuggestion) {
-          let { from, to } = c.textRange;
-          let liveFrom: number | null = null;
-          let liveTo: number | null = null;
-          editor.state.doc.descendants((node, pos) => {
-            if (node.isText) {
-              const mainMark = node.marks.find(
-                (m) => m.type.name === 'commentHighlight' && m.attrs.commentId === commentIdToRemove
-              );
-              if (mainMark) {
-                liveFrom = pos;
-                liveTo = pos + node.textContent.length;
-                return false;
-              }
-            }
-            return true;
-          });
-
-          if (liveFrom !== null && liveTo !== null) {
-            from = liveFrom;
-            to = liveTo;
+        if (c && c.aiSuggestion) {
+          // Use mark-based position finding
+          const currentRange = findCommentMarkRange(editor, commentIdToRemove);
+          if (currentRange) {
+            const { from, to } = currentRange;
+            const suggestionStartPosition = to + 1;
+            const suggestionEndPosition = suggestionStartPosition + c.aiSuggestion.length;
+            editor
+              .chain()
+              .focus()
+              .setTextSelection({ from: to, to: suggestionEndPosition })
+              .deleteSelection()
+              .setTextSelection({ from, to })
+              .unsetMark('diffDel')
+              .run();
           }
-
-          const suggestionStartPosition = to + 1;
-          const suggestionEndPosition = suggestionStartPosition + c.aiSuggestion.length;
-          editor
-            .chain()
-            .focus()
-            .setTextSelection({ from: to, to: suggestionEndPosition })
-            .deleteSelection()
-            .setTextSelection({ from, to })
-            .unsetMark('diffDel')
-            .run();
         }
       }
 
+      // Remove comment from state
       setComments((prevComments) => {
         const updatedComments = { ...prevComments };
         delete updatedComments[commentIdToRemove];
         return updatedComments;
       });
 
-      const tr = editor.state.tr;
-      let markFoundAndRemoved = false;
-      editor.state.doc.descendants((node, pos) => {
-        if (markFoundAndRemoved) return false;
-        node.marks.forEach((mark) => {
-          if (mark.type.name === 'commentHighlight' && mark.attrs.commentId === commentIdToRemove) {
-            tr.removeMark(
-              pos,
-              pos + node.textContent.length,
-              editor.schema.marks.commentHighlight.create({ commentId: commentIdToRemove })
-            );
-            markFoundAndRemoved = true;
-          }
-        });
-        return !markFoundAndRemoved;
-      });
-
-      if (markFoundAndRemoved) {
-        editor.view.dispatch(tr);
-      } else {
-        console.warn(
-          `Could not find CommentHighlightMark for comment ${commentIdToRemove} to remove it upon close.`
-        );
-      }
+      // Use helper to remove mark
+      removeCommentMark(editor, commentIdToRemove);
 
       editor.commands.focus();
 
@@ -1217,7 +1147,7 @@ Paragraphs: ${paragraphs}`);
         setCurrentInstructionInput('');
       }
     },
-    [editor, comments, activeCommentId] // Removed setters from deps as they are stable if only setting state from other state
+    [editor, comments, activeCommentId]
   );
 
   const handleSendIndividualCommentToAI = useCallback<(commentId: string) => void>(
@@ -1328,40 +1258,19 @@ Paragraphs: ${paragraphs}`);
   const toggleInline = useCallback(
     (commentId: string): void => {
       const c = comments[commentId];
-      if (!editor || !c || !c.aiSuggestion || !c.textRange) {
+      if (!editor || !c || !c.aiSuggestion) {
         console.warn('Toggle inline guard failed: ', { editor, c });
         return;
       }
 
-      let currentFrom: number | null = null;
-      let currentTo: number | null = null;
-
-      editor.state.doc.descendants((node, pos) => {
-        if (currentFrom !== null) return false;
-        if (node.isText) {
-          const mainMark = node.marks.find(
-            (m) => m.type.name === 'commentHighlight' && m.attrs.commentId === commentId
-          );
-          if (mainMark) {
-            currentFrom = pos;
-            currentTo = pos + node.textContent.length;
-            return false;
-          }
-        }
-        return true;
-      });
-
-      const finalFrom = currentFrom !== null ? currentFrom : c.textRange.from;
-      const finalTo = currentTo !== null ? currentTo : c.textRange.to;
-
-      if (finalFrom === null || finalTo === null) {
-        console.error(
-          'toggleInline: Critical error - textRange.from or .to is null for comment:',
-          commentId,
-          c.textRange
-        );
+      // Always use current mark position
+      const currentRange = findCommentMarkRange(editor, commentId);
+      if (!currentRange) {
+        console.error(`No mark found for comment ${commentId}`);
         return;
       }
+
+      const { from: finalFrom, to: finalTo } = currentRange;
 
       if (!c.inlineVisible) {
         // Generate smart diff to determine how to display the changes
@@ -1448,56 +1357,24 @@ Paragraphs: ${paragraphs}`);
         !editor ||
         !commentToApply ||
         !commentToApply.aiSuggestion ||
-        commentToApply.status !== 'suggestion_ready' ||
-        commentToApply.textRange === null
+        commentToApply.status !== 'suggestion_ready'
       ) {
         console.warn(
-          'Guard condition failed for accepting suggestion, or textRange is null.',
+          'Guard condition failed for accepting suggestion.',
           commentToApply
         );
-        if (commentToApply && commentToApply.textRange === null) {
-          setComments((prev) => ({
-            ...prev,
-            [commentIdToAccept]: {
-              ...prev[commentIdToAccept],
-              status: 'applied',
-              aiSuggestion: undefined,
-              inlineVisible: false,
-            },
-          }));
-        }
         return;
       }
 
-      let finalFrom = commentToApply.textRange!.from;
-      let finalTo = commentToApply.textRange!.to;
-
-      let liveFrom: number | null = null;
-      let liveTo: number | null = null;
-      editor.state.doc.descendants((node, pos) => {
-        if (liveFrom !== null) return false;
-        if (node.isText) {
-          const mainMark = node.marks.find(
-            (m) => m.type.name === 'commentHighlight' && m.attrs.commentId === commentIdToAccept
-          );
-          if (mainMark) {
-            liveFrom = pos;
-            liveTo = pos + node.textContent.length;
-            return false;
-          }
-        }
-        return true;
-      });
-
-      if (liveFrom !== null && liveTo !== null) {
-        finalFrom = liveFrom;
-        finalTo = liveTo;
-      } else {
-        console.warn(
-          `handleAcceptSuggestion: Could not find live range for comment ${commentIdToAccept}, using stored range. This might lead to incorrect replacement if text was edited around the comment.`
-        );
+      // Use mark-based position finding
+      const currentRange = findCommentMarkRange(editor, commentIdToAccept);
+      if (!currentRange) {
+        console.error(`No mark found for comment ${commentIdToAccept}`);
+        return;
       }
 
+      let finalFrom = currentRange.from;
+      let finalTo = currentRange.to;
       const suggestionText = commentToApply.aiSuggestion;
 
       if (commentToApply.inlineVisible) {
@@ -1529,47 +1406,26 @@ Paragraphs: ${paragraphs}`);
         finalTo = finalFrom;
       }
 
-      if (
-        finalFrom !== null &&
-        finalTo !== null &&
-        finalFrom <= editor.state.doc.content.size &&
-        finalTo <= editor.state.doc.content.size &&
-        finalFrom <= finalTo
-      ) {
-        editor
-          .chain()
-          .focus()
-          .setTextSelection({ from: finalFrom, to: finalTo })
-          .insertContent(suggestionText)
-          .setTextSelection({ from: finalFrom, to: finalFrom + suggestionText.length })
-          .unsetMark('commentHighlight')
-          .run();
+      // Apply the suggestion
+      editor
+        .chain()
+        .focus()
+        .setTextSelection({ from: finalFrom, to: finalTo })
+        .insertContent(suggestionText)
+        .run();
 
-        setComments((prev) => ({
-          ...prev,
-          [commentIdToAccept]: {
-            ...prev[commentIdToAccept],
-            status: 'applied',
-            aiSuggestion: undefined,
-            instruction: prev[commentIdToAccept].instruction || '',
-            inlineVisible: false,
-            textRange: { from: finalFrom, to: finalFrom + suggestionText.length },
-            selectedText: suggestionText,
-          },
-        }));
-      } else {
-        console.warn(
-          `handleAcceptSuggestion: Range for final replacement invalid for comment ${commentIdToAccept}. From: ${finalFrom}, To: ${finalTo}, DocSize: ${editor.state.doc.content.size}`
-        );
-        setComments((prev) => ({
-          ...prev,
-          [commentIdToAccept]: {
-            ...prev[commentIdToAccept],
-            status: 'error',
-            errorMessage: 'Failed to apply suggestion due to range issue.',
-          },
-        }));
-      }
+      // Update comment state
+      setComments((prev) => ({
+        ...prev,
+        [commentIdToAccept]: {
+          ...prev[commentIdToAccept],
+          status: 'applied',
+          aiSuggestion: undefined,
+          inlineVisible: false,
+          textRange: { from: finalFrom, to: finalFrom + suggestionText.length },
+          selectedText: suggestionText,
+        },
+      }));
     },
     [editor, comments, setComments]
   );
