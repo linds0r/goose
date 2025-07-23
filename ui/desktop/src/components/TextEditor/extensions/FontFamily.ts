@@ -1,5 +1,4 @@
 import { Extension } from '@tiptap/core';
-import '@tiptap/extension-text-style';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -58,7 +57,7 @@ export const FontFamily = Extension.create({
       unsetFontFamily:
         () =>
         ({ chain }) => {
-          return chain().setMark('textStyle', { fontFamily: null }).removeEmptyTextStyle().run();
+          return chain().setMark('textStyle', { fontFamily: null }).run();
         },
     };
   },

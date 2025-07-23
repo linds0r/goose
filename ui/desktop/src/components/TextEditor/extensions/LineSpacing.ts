@@ -1,49 +1,23 @@
 import { Extension } from '@tiptap/core';
 
-export interface LineSpacingOptions {
-  types: string[];
-  defaultSpacing: string;
-}
-
-declare module '@tiptap/core' {
-  interface Commands<ReturnType> {
-    lineSpacing: {
-      /**
-       * Set line spacing
-       */
-      setLineSpacing: (spacing: string) => ReturnType;
-      /**
-       * Unset line spacing
-       */
-      unsetLineSpacing: () => ReturnType;
-    };
-  }
-}
-
-export const LineSpacing = Extension.create<LineSpacingOptions>({
+export const LineSpacing = Extension.create({
   name: 'lineSpacing',
-
-  addOptions() {
-    return {
-      types: ['paragraph', 'heading'],
-      defaultSpacing: '1.15',
-    };
-  },
 
   addGlobalAttributes() {
     return [
       {
-        types: this.options.types,
+        types: ['paragraph', 'heading'],
         attributes: {
-          lineSpacing: {
-            default: this.options.defaultSpacing,
-            parseHTML: (element) => element.style.lineHeight || this.options.defaultSpacing,
-            renderHTML: (attributes) => {
-              if (!attributes.lineSpacing) {
+          lineHeight: {
+            default: null,
+            parseHTML: element => element.style.lineHeight,
+            renderHTML: attributes => {
+              if (!attributes.lineHeight) {
                 return {};
               }
+
               return {
-                style: `line-height: ${attributes.lineSpacing}`,
+                style: `line-height: ${attributes.lineHeight}`,
               };
             },
           },
@@ -54,18 +28,16 @@ export const LineSpacing = Extension.create<LineSpacingOptions>({
 
   addCommands() {
     return {
-      setLineSpacing:
-        (spacing: string) =>
-        ({ commands }) => {
-          return this.options.types.every((type) =>
-            commands.updateAttributes(type, { lineSpacing: spacing })
-          );
-        },
-      unsetLineSpacing:
-        () =>
-        ({ commands }) => {
-          return this.options.types.every((type) => commands.resetAttributes(type, 'lineSpacing'));
-        },
+      setLineHeight: (lineHeight: string) => ({ chain }) => {
+        return chain()
+          .updateAttributes('paragraph', { lineHeight })
+          .run();
+      },
+      unsetLineHeight: () => ({ chain }) => {
+        return chain()
+          .updateAttributes('paragraph', { lineHeight: null })
+          .run();
+      },
     };
   },
 });

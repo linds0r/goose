@@ -11,7 +11,7 @@ import {
   SidebarGroupContent,
   SidebarSeparator,
 } from '../ui/sidebar';
-import { ChatSmart, Gear } from '../icons';
+import { ChatSmart, Gear, Edit } from '../icons';
 import { ViewOptions, View } from '../../App';
 
 interface SidebarProps {
@@ -82,6 +82,20 @@ const AppSidebar: React.FC<SidebarProps> = ({ currentPath }) => {
                   >
                     <ChatSmart className="w-4 h-4" />
                     <span>Chat</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </div>
+
+              <div className="sidebar-item">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={() => navigate('/text-editor')}
+                    isActive={isActivePath('/text-editor')}
+                    tooltip="Open the AI-powered text editor"
+                    className="w-full justify-start px-3 rounded-lg h-fit hover:bg-background-medium/50 transition-all duration-200 data-[active=true]:bg-background-medium"
+                  >
+                    <Edit className="w-4 h-4" />
+                    <span>Text Editor</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </div>

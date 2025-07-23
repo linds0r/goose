@@ -47,11 +47,13 @@ import ExtensionsView, { ExtensionsViewOptions } from './components/extensions/E
 import { Recipe } from './recipe';
 import RecipesView from './components/RecipesView';
 import RecipeEditor from './components/RecipeEditor';
+import TextEditorView from './components/TextEditor/TextEditorView';
 
 export type View =
   | 'welcome'
   | 'chat'
   | 'pair'
+  | 'text-editor'
   | 'settings'
   | 'extensions'
   | 'moreModels'
@@ -636,6 +638,56 @@ const ExtensionsRoute = () => {
   );
 };
 
+const TextEditorRoute = () => {
+  const navigate = useNavigate();
+
+  const setView = (view: View, viewOptions?: ViewOptions) => {
+    // Convert view to route navigation
+    switch (view) {
+      case 'chat':
+        navigate('/');
+        break;
+      case 'pair':
+        navigate('/pair', { state: viewOptions });
+        break;
+      case 'text-editor':
+        navigate('/text-editor');
+        break;
+      case 'settings':
+        navigate('/settings', { state: viewOptions });
+        break;
+      case 'sessions':
+        navigate('/sessions');
+        break;
+      case 'schedules':
+        navigate('/schedules');
+        break;
+      case 'recipes':
+        navigate('/recipes');
+        break;
+      case 'permission':
+        navigate('/permission', { state: viewOptions });
+        break;
+      case 'ConfigureProviders':
+        navigate('/configure-providers');
+        break;
+      case 'sharedSession':
+        navigate('/shared-session', { state: viewOptions });
+        break;
+      case 'recipeEditor':
+        navigate('/recipe-editor', { state: viewOptions });
+        break;
+      case 'welcome':
+        navigate('/welcome');
+        break;
+      default:
+        navigate('/');
+    }
+  };
+
+  return <TextEditorView setView={setView} />;
+};
+
 // const ProjectsRoute = () => {
 //   const navigate = useNavigate();
 //
@@ -726,8 +778,8 @@ export default function App() {
       case 'settings':
         window.location.hash = '#/settings';
         break;
-      case 'extensions':
-        window.location.hash = '#/extensions';
+      case 'text-editor':
+        window.location.hash = '#/text-editor';
         break;
       case 'sessions':
         window.location.hash = '#/sessions';
@@ -1400,6 +1452,14 @@ export default function App() {
                   element={
                     <ProviderGuard>
                       <SettingsRoute />
+                    </ProviderGuard>
+                  }
+                />
+                <Route
+                  path="text-editor"
+                  element={
+                    <ProviderGuard>
+                      <TextEditorRoute />
                     </ProviderGuard>
                   }
                 />

@@ -3,11 +3,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { Node as PMNode } from 'prosemirror-model';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import { TextStyle } from './extensions/TextStyle';
-import { Underline } from './extensions/Underline';
-import { TextAlign } from './extensions/TextAlign';
-import { Highlight } from './extensions/Highlight';
-import { Link } from './extensions/Link';
+import { TextStyle } from '@tiptap/extension-text-style';
+import Underline from '@tiptap/extension-underline';
+import TextAlign from '@tiptap/extension-text-align';
+import Highlight from '@tiptap/extension-highlight';
+import Link from '@tiptap/extension-link';
+import Superscript from '@tiptap/extension-superscript';
+import Subscript from '@tiptap/extension-subscript';
 import EditorToolbar from './EditorToolbar';
 import ContextMenu from './ContextMenu';
 import './TextEditor.css';
@@ -19,8 +21,6 @@ import { GoogleDocsEnterBehavior } from './extensions/GoogleDocsEnterBehavior';
 import { FontSize } from './extensions/FontSize';
 import { FontFamily } from './extensions/FontFamily';
 import { TextColor } from './extensions/TextColor';
-import { Superscript } from './extensions/Superscript';
-import { Subscript } from './extensions/Subscript';
 import { ClearFormatting } from './extensions/ClearFormatting';
 import { LineSpacing } from './extensions/LineSpacing';
 import { TextTransform } from './extensions/TextTransform';
@@ -312,15 +312,8 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
       CommentHighlightMark,
       StrikethroughDiffMark,
       BoldItalicAddMark,
-      GoogleDocsEnterBehavior,
-      FontSize,
-      FontFamily,
-      TextColor,
       Superscript,
       Subscript,
-      ClearFormatting,
-      LineSpacing,
-      TextTransform,
     ],
     content: `<h1>Welcome to Goose Text Editor</h1>
 <p>A powerful document editor with integrated AI assistance. Get help with writing, editing, and improving your content using two main AI features:</p>
@@ -1516,10 +1509,10 @@ Paragraphs: ${paragraphs}`);
             borderLeft: '1px solid #e0e0e0',
             padding: '20px',
             overflowY: 'auto',
-            backgroundColor: '#fafafa',
+            backgroundColor: '#ffffff',
             position: 'relative',
             flexShrink: 0,
-            fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+            fontFamily: "'Cash Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
           }}
         >
           <h4
