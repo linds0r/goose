@@ -125,7 +125,7 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
       {/* Selected text display */}
       <div className="comment-bubble-selected-text">"{comment.selectedText}"</div>
 
-      {/* Instruction input/display - only show for user-initiated comments */}
+      {/* User's original comment/instruction - always show when it exists */}
       {canEditInstruction ? (
         <div className="comment-bubble-instruction">
           <textarea
@@ -139,10 +139,10 @@ const CommentBubble: React.FC<CommentBubbleProps> = ({
           />
         </div>
       ) : (
-        // Only show instruction for user-initiated comments, not AI Refine suggestions
-        comment.instruction && !comment.explanation && (
-          <div className="comment-bubble-instruction">
-            <strong>Instruction:</strong> {comment.instruction}
+        // Always show the user's original comment/instruction for context
+        comment.instruction && (
+          <div className="comment-bubble-user-comment">
+            {comment.instruction}
           </div>
         )
       )}

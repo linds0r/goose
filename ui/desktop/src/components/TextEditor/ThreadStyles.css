@@ -179,3 +179,13 @@
   box-shadow: 0 2px 8px rgba(234, 67, 53, 0.3);
   border-left: 3px solid #ea4335;
 }
+
+/* User's original comment styling - similar to Google Docs */
+.comment-bubble-user-comment {
+  font-size: 14px;
+  color: #202124;
+  margin-bottom: 12px;
+  line-height: 1.4;
+  padding: 8px 0;
+  border-bottom: 1px solid #e8eaed;
+}
