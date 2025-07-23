@@ -1,0 +1,653 @@
+/* /Users/lindseyf/goose-repo/ui/desktop/src/components/TextEditor/TextEditor.css */
+.text-editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* Or a specific height */
+}
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #ffffff;
+  flex-wrap: wrap;
+  gap: 2px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.editor-toolbar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #444;
+  cursor: pointer;
+  font-size: 14px;
+  min-width: 32px;
+  height: 32px;
+  transition: all 0.15s ease;
+}
+
+.editor-toolbar button:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #ddd;
+}
+
+.editor-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.editor-toolbar button.is-active {
+  background: #e3f2fd;
+  border-color: #2196f3;
+  color: #1976d2;
+}
+
+.editor-toolbar select {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  font-size: 12px;
+  min-width: 80px;
+  height: 28px;
+  margin-right: 4px;
+}
+
+.editor-toolbar select:focus {
+  outline: none;
+  border-color: #2196f3;
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background: #ddd;
+  margin: 0 6px;
+}
+
+/* Color picker styling */
+.editor-toolbar input[type='color'] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  background: none;
+}
+
+.editor-toolbar input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+}
+
+.editor-toolbar input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+.editor-content-area {
+  flex-grow: 1;
+  padding: 0;
+  overflow-y: auto;
+  background-color: #ffffff;
+}
+
+/* Google Docs-like Editor Styling */
+.google-docs-editor {
+  min-height: calc(100vh - 200px);
+  outline: none;
+  padding: 48px 96px; /* Google Docs-like margins */
+  max-width: none;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Similar to Google Docs */
+  font-size: 12pt; /* Increased from 11pt to 12pt */
+  line-height: 1.15; /* Google Docs line height */
+  color: #202124; /* Google Docs text color */
+  background-color: white;
+  margin: 0 auto;
+  box-shadow: 0 0 0 0.75pt #d1d5db; /* Subtle document border */
+}
+
+/* Superscript and Subscript styling */
+.google-docs-editor sup {
+  vertical-align: super;
+  font-size: 0.75em;
+  line-height: 0;
+}
+
+.google-docs-editor sub {
+  vertical-align: sub;
+  font-size: 0.75em;
+  line-height: 0;
+}
+
+/* Google Docs-like paragraph spacing */
+.google-docs-editor p {
+  margin: 0 0 0 0; /* No automatic spacing between paragraphs */
+  padding: 0;
+  line-height: 1.15;
+}
+
+/* Only add spacing when user explicitly presses Enter twice */
+.google-docs-editor p + p {
+  margin-top: 0; /* No automatic spacing */
+}
+
+/* Google Docs-like heading styles */
+.google-docs-editor h1 {
+  font-size: 20pt;
+  font-weight: 400;
+  margin: 20pt 0 6pt 0;
+  color: #202124;
+}
+
+.google-docs-editor h2 {
+  font-size: 16pt;
+  font-weight: 400;
+  margin: 18pt 0 6pt 0;
+  color: #202124;
+}
+
+.google-docs-editor h3 {
+  font-size: 14pt;
+  font-weight: 400;
+  margin: 16pt 0 4pt 0;
+  color: #202124;
+}
+
+.google-docs-editor h4 {
+  font-size: 12pt;
+  font-weight: 400;
+  margin: 14pt 0 4pt 0;
+  color: #202124;
+}
+
+.google-docs-editor h5 {
+  font-size: 11pt;
+  font-weight: 400;
+  margin: 12pt 0 4pt 0;
+  color: #202124;
+}
+
+.google-docs-editor h6 {
+  font-size: 11pt;
+  font-weight: 400;
+  margin: 10pt 0 4pt 0;
+  color: #202124;
+}
+
+/* Google Docs-like list styling */
+.google-docs-editor ul,
+.google-docs-editor ol {
+  margin: 0 0 0 0;
+  padding-left: 48pt; /* Google Docs indent */
+  list-style-type: disc; /* Ensure bullets show */
+}
+
+.google-docs-editor ol {
+  list-style-type: decimal; /* Ensure numbers show */
+}
+
+.google-docs-editor ul ul {
+  list-style-type: circle; /* Nested bullets */
+}
+
+.google-docs-editor ul ul ul {
+  list-style-type: square; /* Third level bullets */
+}
+
+.google-docs-editor li {
+  margin: 0;
+  padding: 0;
+  line-height: 1.15;
+}
+
+/* Google Docs-like blockquote */
+.google-docs-editor blockquote {
+  margin: 0 0 0 0;
+  padding-left: 36pt;
+  border-left: none;
+  font-style: italic;
+}
+
+/* Selection styling similar to Google Docs */
+.google-docs-editor ::selection {
+  background-color: #4285f4;
+  color: white;
+}
+
+/* Cursor styling */
+.google-docs-editor .ProseMirror-focused {
+  outline: none;
+}
+
+/* Link styling */
+.google-docs-editor .editor-link {
+  color: #1a73e8;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.google-docs-editor .editor-link:hover {
+  text-decoration: underline;
+  color: #1557b0;
+}
+
+/* Basic TipTap ProseMirror editor styling (can be adjusted) */
+.ProseMirror {
+  min-height: 200px; /* Adjust as needed */
+  outline: none;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #adb5bd;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Styling for the AI Prompt Anchor Mark */
+.ProseMirror span[data-prompt-id] {
+  background-color: #fff9c4; /* Light yellow */
+  cursor: help; /* Indicates that this text has associated information or action */
+}
+
+/* Styling for the new Comment Highlight Mark */
+.comment-highlight {
+  background-color: #e6f7ff; /* Light blue, similar to some suggestion UI */
+  /* Or use a yellow: background-color: #fff9e6; */
+  /* cursor: pointer; /* Optional: to indicate it's interactive */
+}
+
+/* Comment Bubble System - Harmonized with Google Docs style */
+.comment-bubble {
+  position: relative;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background-color: #ffffff;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.1);
+  transition: all 0.2s ease;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.comment-bubble:hover {
+  border-color: #d0d0d0;
+  box-shadow: 0 2px 4px rgba(60, 64, 67, 0.15);
+}
+
+.comment-bubble.active {
+  border-color: #4285f4;
+  box-shadow: 0 2px 8px rgba(66, 133, 244, 0.2);
+  background-color: #fafbff;
+}
+
+.comment-bubble-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.comment-bubble-selected-text {
+  font-size: 13px;
+  color: #5f6368;
+  background-color: #f8f9fa;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 3px solid #4285f4;
+  margin-bottom: 12px;
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.comment-bubble-instruction {
+  margin-bottom: 12px;
+}
+
+.comment-bubble-instruction textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.4;
+  resize: vertical;
+  background-color: #ffffff;
+  transition: border-color 0.2s ease;
+}
+
+.comment-bubble-instruction textarea:focus {
+  outline: none;
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+}
+
+.comment-bubble-instruction textarea::placeholder {
+  color: #9aa0a6;
+  font-style: italic;
+}
+
+.comment-bubble-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.comment-bubble-status.pending {
+  background-color: #fef7e0;
+  color: #f9ab00;
+  border: 1px solid #fdd663;
+}
+
+.comment-bubble-status.processing {
+  background-color: #e8f0fe;
+  color: #1a73e8;
+  border: 1px solid #aecbfa;
+}
+
+.comment-bubble-status.suggestion_ready {
+  background-color: #e6f4ea;
+  color: #137333;
+  border: 1px solid #81c995;
+}
+
+.comment-bubble-status.applied {
+  background-color: #f3e8fd;
+  color: #8430ce;
+  border: 1px solid #c58af9;
+}
+
+.comment-bubble-status.error {
+  background-color: #fce8e6;
+  color: #d93025;
+  border: 1px solid #f28b82;
+}
+
+.comment-bubble-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.comment-bubble-btn {
+  padding: 8px 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background-color: #ffffff;
+  color: #3c4043;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.comment-bubble-btn:hover:not(:disabled) {
+  background-color: #f8f9fa;
+  border-color: #d0d0d0;
+}
+
+.comment-bubble-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.comment-bubble-btn.primary {
+  background-color: #4285f4;
+  color: #ffffff;
+  border-color: #4285f4;
+}
+
+.comment-bubble-btn.primary:hover:not(:disabled) {
+  background-color: #3367d6;
+  border-color: #3367d6;
+}
+
+.comment-bubble-btn.success {
+  background-color: #34a853;
+  color: #ffffff;
+  border-color: #34a853;
+}
+
+.comment-bubble-btn.success:hover:not(:disabled) {
+  background-color: #2d7d32;
+  border-color: #2d7d32;
+}
+
+.comment-bubble-btn.danger {
+  color: #d93025;
+  border-color: #f28b82;
+}
+
+.comment-bubble-btn.danger:hover:not(:disabled) {
+  background-color: #fce8e6;
+  border-color: #d93025;
+}
+
+.comment-bubble-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: #9aa0a6;
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.2s ease;
+}
+
+.comment-bubble-close-btn:hover {
+  background-color: #f1f3f4;
+  color: #5f6368;
+}
+
+.comment-bubble-ai-response {
+  background-color: #f8f9fa;
+  border: 1px solid #e8eaed;
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #3c4043;
+}
+
+.comment-bubble-thread {
+  margin-top: 12px;
+  border-top: 1px solid #e8eaed;
+  padding-top: 12px;
+}
+
+.comment-bubble-thread-toggle {
+  color: #1a73e8;
+  background: none;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 0;
+  text-decoration: underline;
+}
+
+.comment-bubble-thread-toggle:hover {
+  color: #1557b0;
+}
+
+.comment-bubble-reply {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.comment-bubble-reply.user {
+  background-color: #e8f0fe;
+  border-left: 3px solid #4285f4;
+}
+
+.comment-bubble-reply.assistant {
+  background-color: #f8f9fa;
+  border-left: 3px solid #34a853;
+}
+
+.comment-bubble-reply-input {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.comment-bubble-reply-input input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.comment-bubble-reply-input input:focus {
+  outline: none;
+  border-color: #4285f4;
+  box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.1);
+}
+
+.comment-bubble-reply-input button {
+  padding: 8px 12px;
+  background-color: #4285f4;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.comment-bubble-reply-input button:hover {
+  background-color: #3367d6;
+}
+
+.comment-bubble-reply-input button:disabled {
+  background-color: #9aa0a6;
+  cursor: not-allowed;
+}
+
+/* Resize Handle Styling */
+.sidebar-resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  flex-shrink: 0;
+  background-color: #ddd;
+  transition: background-color 0.2s ease;
+  position: relative;
+}
+
+.sidebar-resize-handle:hover {
+  background-color: #007bff;
+}
+
+.sidebar-resize-handle.resizing {
+  background-color: #007bff;
+  transition: none;
+}
+
+/* Add a subtle visual indicator */
+.sidebar-resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 20px;
+  background-color: rgba(255, 255, 255, 0.5);
+  border-radius: 1px;
+}
+
+/* Context Menu Styling */
+.context-menu {
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  min-width: 200px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 14px;
+  user-select: none;
+  animation: contextMenuFadeIn 0.15s ease-out;
+}
+
+@keyframes contextMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  cursor: pointer;
+  color: #3c4043;
+  transition: background-color 0.15s ease;
+}
+
+.context-menu-item:hover {
+  background-color: #f8f9fa;
+}
+
+.context-menu-item:active {
+  background-color: #e8f0fe;
+}
+
+.context-menu-item svg {
+  flex-shrink: 0;
+  color: #5f6368;
+}
+
+.context-menu-item span {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.context-menu-divider {
+  height: 1px;
+  background-color: #e8eaed;
+  margin: 4px 0;
+}

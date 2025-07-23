@@ -1,0 +1,191 @@
+/* Thread styling */
+.thread-section {
+  margin-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 8px;
+}
+
+.thread-toggle {
+  font-size: 12px;
+  color: #6b7280;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.thread-toggle:hover {
+  color: #374151;
+}
+
+.thread-replies {
+  margin-top: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.thread-reply {
+  margin-bottom: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.thread-reply.user-reply {
+  background-color: #f3f4f6;
+  margin-left: 12px;
+}
+
+.thread-reply.ai-reply {
+  background-color: #eff6ff;
+  margin-right: 12px;
+}
+
+.reply-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.ai-badge {
+  background-color: #3b82f6;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.user-badge {
+  background-color: #6b7280;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.reply-timestamp {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.reply-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.reply-status {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.reply-status.error {
+  color: #dc2626;
+}
+
+.reply-section {
+  margin-top: 8px;
+  border-top: 1px solid #f3f4f6;
+  padding-top: 8px;
+}
+
+.reply-input {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reply-textarea {
+  min-height: 60px;
+  padding: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.reply-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 1px #3b82f6;
+}
+
+.reply-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.reply-actions button {
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+}
+
+.reply-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.start-reply-btn {
+  background: none;
+  border: 1px solid #d1d5db;
+  color: #6b7280;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.start-reply-btn:hover {
+  background-color: #f9fafb;
+  color: #374151;
+}
+
+/* Comment bubble explanation styling */
+.comment-bubble-explanation {
+  font-size: 13px;
+  color: #3c4043;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+  border-left: 3px solid #4285f4;
+}
+
+/* Comment bubble state styling with colored shadows */
+.comment-bubble-pending {
+  box-shadow: 0 2px 8px rgba(251, 188, 4, 0.3);
+  border-left: 3px solid #fbbc04;
+}
+
+.comment-bubble-applied {
+  box-shadow: 0 2px 8px rgba(52, 168, 83, 0.3);
+  border-left: 3px solid #34a853;
+}
+
+.comment-bubble-processing {
+  box-shadow: 0 2px 8px rgba(66, 133, 244, 0.3);
+  border-left: 3px solid #4285f4;
+}
+
+.comment-bubble-error {
+  box-shadow: 0 2px 8px rgba(234, 67, 53, 0.3);
+  border-left: 3px solid #ea4335;
+}
+
+/* User's original comment styling - similar to Google Docs */
+.comment-bubble-user-comment {
+  font-size: 14px;
+  color: #202124;
+  margin-bottom: 12px;
+  line-height: 1.4;
+  padding: 8px 0;
+  border-bottom: 1px solid #e8eaed;
+}
