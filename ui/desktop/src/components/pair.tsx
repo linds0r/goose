@@ -28,7 +28,6 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { type View, ViewOptions } from '../App';
 import BaseChat from './BaseChat';
-import ParameterInputModal from './ParameterInputModal';
 import { useRecipeManager } from '../hooks/useRecipeManager';
 import { useIsMobile } from '../hooks/use-mobile';
 import { useSidebar } from './ui/sidebar';
@@ -36,6 +35,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { cn } from '../utils';
 
 import { ChatType } from '../types/chat';
+import { DEFAULT_CHAT_TITLE } from '../contexts/ChatContext';
 
 export default function Pair({
   chat,
@@ -57,13 +57,7 @@ export default function Pair({
   const [isTransitioningFromHub, setIsTransitioningFromHub] = useState(false);
 
   // Get recipe configuration and parameter handling
-  const {
-    recipeConfig,
-    initialPrompt: recipeInitialPrompt,
-    isParameterModalOpen,
-    setIsParameterModalOpen,
-    handleParameterSubmit,
-  } = useRecipeManager(chat.messages, location.state);
+  const { initialPrompt: recipeInitialPrompt } = useRecipeManager(chat.messages, location.state);
 
   // Handle recipe loading from recipes view - reset chat if needed
   useEffect(() => {
@@ -87,6 +81,22 @@ export default function Pair({
   // Handle initial message from hub page
   useEffect(() => {
     const messageFromHub = location.state?.initialMessage;
+    const resetChat = location.state?.resetChat;
+
+    // If we have a resetChat flag from Hub, clear any existing recipe config
+    // This scenario occurs when a user navigates from Hub to start a new chat,
+    // ensuring any previous recipe configuration is cleared for a fresh start
+    if (resetChat) {
+      const newChat: ChatType = {
+        ...chat,
+        recipeConfig: null,
+        recipeParameters: null,
+        title: DEFAULT_CHAT_TITLE,
+        messages: [], // Clear messages for fresh start
+        messageHistoryIndex: 0,
+      };
+      setChat(newChat);
+    }
 
     // Reset processing state when we have a new message from hub
     if (messageFromHub) {
@@ -107,7 +117,7 @@ export default function Pair({
         window.history.replaceState({}, '', '/pair');
       }
     }
-  }, [location.state, hasProcessedInitialInput, initialMessage, chat]);
+  }, [location.state, hasProcessedInitialInput, initialMessage, chat, setChat]);
 
   // Auto-submit the initial message after it's been set and component is ready
   useEffect(() => {
@@ -196,15 +206,6 @@ export default function Pair({
         showPopularTopics={!isTransitioningFromHub} // Don't show popular topics while transitioning from Hub
         suppressEmptyState={isTransitioningFromHub} // Suppress all empty state content while transitioning from Hub
       />
-
-      {/* Recipe Parameter Modal */}
-      {isParameterModalOpen && recipeConfig?.parameters && (
-        <ParameterInputModal
-          parameters={recipeConfig.parameters}
-          onSubmit={handleParameterSubmit}
-          onClose={() => setIsParameterModalOpen(false)}
-        />
-      )}
     </>
   );
 }

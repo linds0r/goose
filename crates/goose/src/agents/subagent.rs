@@ -3,19 +3,20 @@ use crate::{
     agents::extension::ExtensionConfig,
     agents::{extension_manager::ExtensionManager, Agent, TaskConfig},
     config::ExtensionConfigManager,
-    message::{Message, MessageContent, ToolRequest},
     prompt_template::render_global_file,
     providers::errors::ProviderError,
 };
 use anyhow::anyhow;
 use chrono::{DateTime, Utc};
-use mcp_core::{handler::ToolError, tool::Tool};
-use rmcp::model::{JsonRpcMessage, JsonRpcNotification, JsonRpcVersion2_0, Notification};
-use rmcp::object;
+use rmcp::model::Tool;
+use rmcp::model::{ErrorCode, ErrorData};
 use serde::{Deserialize, Serialize};
 // use serde_json::{self};
+use crate::conversation::message::{Message, MessageContent, ToolRequest};
+use crate::conversation::Conversation;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{Mutex, RwLock};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, instrument};
 
 /// Status of a subagent
@@ -41,7 +42,7 @@ pub struct SubAgentProgress {
 /// A specialized agent that can handle specific tasks independently
 pub struct SubAgent {
     pub id: String,
-    pub conversation: Arc<Mutex<Vec<Message>>>,
+    pub conversation: Arc<Mutex<Conversation>>,
     pub status: Arc<RwLock<SubAgentStatus>>,
     pub config: TaskConfig,
     pub turn_count: Arc<Mutex<usize>>,
@@ -52,9 +53,7 @@ pub struct SubAgent {
 impl SubAgent {
     /// Create a new subagent with the given configuration and provider
     #[instrument(skip(task_config))]
-    pub async fn new(
-        task_config: TaskConfig,
-    ) -> Result<(Arc<Self>, tokio::task::JoinHandle<()>), anyhow::Error> {
+    pub async fn new(task_config: TaskConfig) -> Result<Arc<Self>, anyhow::Error> {
         debug!("Creating new subagent with id: {}", task_config.id);
 
         // Create a new extension manager for this subagent
@@ -82,7 +81,7 @@ impl SubAgent {
 
         let subagent = Arc::new(SubAgent {
             id: task_config.id.clone(),
-            conversation: Arc::new(Mutex::new(Vec::new())),
+            conversation: Arc::new(Mutex::new(Conversation::new_unvalidated(Vec::new()))),
             status: Arc::new(RwLock::new(SubAgentStatus::Ready)),
             config: task_config,
             turn_count: Arc::new(Mutex::new(0)),
@@ -90,26 +89,8 @@ impl SubAgent {
             extension_manager: Arc::new(RwLock::new(extension_manager)),
         });
 
-        // Send initial MCP notification
-        let subagent_clone = Arc::clone(&subagent);
-        subagent_clone
-            .send_mcp_notification("subagent_created", "Subagent created and ready")
-            .await;
-
-        // Create a background task handle (for future use with streaming/monitoring)
-        let subagent_clone = Arc::clone(&subagent);
-        let handle = tokio::spawn(async move {
-            // This could be used for background monitoring, cleanup, etc.
-            debug!("Subagent {} background task started", subagent_clone.id);
-        });
-
         debug!("Subagent {} created successfully", subagent.id);
-        Ok((subagent, handle))
-    }
-
-    /// Get the current status of the subagent
-    pub async fn get_status(&self) -> SubAgentStatus {
-        self.status.read().await.clone()
+        Ok(subagent)
     }
 
     /// Update the status of the subagent
@@ -119,71 +100,6 @@ impl SubAgent {
             let mut current_status = self.status.write().await;
             *current_status = status.clone();
         } // Write lock is released here!
-
-        // Send MCP notifications based on status
-        match &status {
-            SubAgentStatus::Processing => {
-                self.send_mcp_notification("status_changed", "Processing request")
-                    .await;
-            }
-            SubAgentStatus::Completed(msg) => {
-                self.send_mcp_notification("completed", &format!("Completed: {}", msg))
-                    .await;
-            }
-            SubAgentStatus::Terminated => {
-                self.send_mcp_notification("terminated", "Subagent terminated")
-                    .await;
-            }
-            _ => {}
-        }
-    }
-
-    /// Send an MCP notification about the subagent's activity
-    pub async fn send_mcp_notification(&self, notification_type: &str, message: &str) {
-        let notification = JsonRpcMessage::Notification(JsonRpcNotification {
-            jsonrpc: JsonRpcVersion2_0,
-            notification: Notification {
-                method: "notifications/message".to_string(),
-                params: object!({
-                    "level": "info",
-                    "logger": format!("subagent_{}", self.id),
-                    "data": {
-                        "subagent_id": self.id,
-                        "type": notification_type,
-                        "message": message,
-                        "timestamp": Utc::now().to_rfc3339()
-                    }
-                }),
-                extensions: Default::default(),
-            },
-        });
-
-        if let Err(e) = self.config.mcp_tx.send(notification).await {
-            error!(
-                "Failed to send MCP notification from subagent {}: {}",
-                self.id, e
-            );
-        }
-    }
-
-    /// Get current progress information
-    pub async fn get_progress(&self) -> SubAgentProgress {
-        let status = self.get_status().await;
-        let turn_count = *self.turn_count.lock().await;
-
-        SubAgentProgress {
-            subagent_id: self.id.clone(),
-            status: status.clone(),
-            message: match &status {
-                SubAgentStatus::Ready => "Ready to process messages".to_string(),
-                SubAgentStatus::Processing => "Processing request...".to_string(),
-                SubAgentStatus::Completed(msg) => msg.clone(),
-                SubAgentStatus::Terminated => "Subagent terminated".to_string(),
-            },
-            turn: turn_count,
-            max_turns: self.config.max_turns,
-            timestamp: Utc::now(),
-        }
     }
 
     /// Process a message and generate a response using the subagent's provider
@@ -192,10 +108,8 @@ impl SubAgent {
         &self,
         message: String,
         task_config: TaskConfig,
-    ) -> Result<Message, anyhow::Error> {
+    ) -> Result<Conversation, anyhow::Error> {
         debug!("Processing message for subagent {}", self.id);
-        self.send_mcp_notification("message_processing", &format!("Processing: {}", message))
-            .await;
 
         // Get provider from task config
         let provider = self
@@ -215,7 +129,10 @@ impl SubAgent {
         }
 
         // Get the current conversation for context
-        let mut messages = self.get_conversation().await;
+        let mut messages = {
+            let conversation = self.conversation.lock().await;
+            conversation.clone()
+        };
 
         // Get tools from the subagent's own extension manager
         let tools: Vec<Tool> = self
@@ -234,6 +151,7 @@ impl SubAgent {
         // Generate response from provider with loop for tool processing (max_turns iterations)
         let mut loop_count = 0;
         let max_turns = self.config.max_turns.unwrap_or(DEFAULT_SUBAGENT_MAX_TURNS);
+        let mut last_error: Option<anyhow::Error> = None;
 
         // Generate response from provider
         loop {
@@ -242,7 +160,7 @@ impl SubAgent {
             match Agent::generate_response_from_provider(
                 Arc::clone(provider),
                 &system_prompt,
-                &messages,
+                messages.messages(),
                 &tools,
                 &toolshim_tools,
             )
@@ -265,18 +183,12 @@ impl SubAgent {
                     // If there are no tool requests, we're done
                     if tool_requests.is_empty() || loop_count >= max_turns {
                         self.add_message(response.clone()).await;
+                        messages.push(response.clone());
 
-                        // Send notification about response
-                        self.send_mcp_notification(
-                            "response_generated",
-                            &format!("Responded: {}", response.as_concat_text()),
-                        )
-                        .await;
-
-                        // Set status back to ready and return the final response
+                        // Set status back to ready
                         self.set_status(SubAgentStatus::Completed("Completed!".to_string()))
                             .await;
-                        break Ok(response);
+                        break;
                     }
 
                     // Add the assistant message with tool calls to the conversation
@@ -285,23 +197,20 @@ impl SubAgent {
                     // Process each tool request and create user response messages
                     for request in &tool_requests {
                         if let Ok(tool_call) = &request.tool_call {
-                            // Send notification about tool usage
-                            self.send_mcp_notification(
-                                "tool_usage",
-                                &format!("Using tool: {}", tool_call.name),
-                            )
-                            .await;
-
                             // Handle platform tools or dispatch to extension manager
                             let tool_result = match self
                                 .extension_manager
                                 .read()
                                 .await
-                                .dispatch_tool_call(tool_call.clone())
+                                .dispatch_tool_call(tool_call.clone(), CancellationToken::default())
                                 .await
                             {
                                 Ok(result) => result.result.await,
-                                Err(e) => Err(ToolError::ExecutionError(e.to_string())),
+                                Err(e) => Err(ErrorData::new(
+                                    ErrorCode::INTERNAL_ERROR,
+                                    e.to_string(),
+                                    None,
+                                )),
                             };
 
                             match tool_result {
@@ -310,28 +219,18 @@ impl SubAgent {
                                     let tool_response_message = Message::user()
                                         .with_tool_response(request.id.clone(), Ok(result.clone()));
                                     messages.push(tool_response_message);
-
-                                    // Send notification about tool completion
-                                    self.send_mcp_notification(
-                                        "tool_completed",
-                                        &format!("Tool {} completed successfully", tool_call.name),
-                                    )
-                                    .await;
                                 }
                                 Err(e) => {
                                     // Create a user message with the tool error
                                     let tool_error_message = Message::user().with_tool_response(
                                         request.id.clone(),
-                                        Err(ToolError::ExecutionError(e.to_string())),
+                                        Err(ErrorData::new(
+                                            ErrorCode::INTERNAL_ERROR,
+                                            e.to_string(),
+                                            None,
+                                        )),
                                     );
                                     messages.push(tool_error_message);
-
-                                    // Send notification about tool error
-                                    self.send_mcp_notification(
-                                        "tool_error",
-                                        &format!("Tool {} error: {}", tool_call.name, e),
-                                    )
-                                    .await;
                                 }
                             }
                         }
@@ -344,56 +243,37 @@ impl SubAgent {
                         "Context length exceeded".to_string(),
                     ))
                     .await;
-                    break Ok(Message::assistant().with_context_length_exceeded(
-                        "The context length of the model has been exceeded. Please start a new session and try again.",
-                    ));
+                    last_error = Some(anyhow::anyhow!("Context length exceeded"));
+                    break;
                 }
                 Err(ProviderError::RateLimitExceeded(_)) => {
                     self.set_status(SubAgentStatus::Completed("Rate limit exceeded".to_string()))
                         .await;
-                    break Ok(Message::assistant()
-                        .with_text("Rate limit exceeded. Please try again later."));
+                    last_error = Some(anyhow::anyhow!("Rate limit exceeded"));
+                    break;
                 }
                 Err(e) => {
                     self.set_status(SubAgentStatus::Completed(format!("Error: {}", e)))
                         .await;
                     error!("Error: {}", e);
-                    break Ok(Message::assistant().with_text(format!("Ran into this error: {e}.\n\nPlease retry if you think this is a transient or recoverable error.")));
+                    last_error = Some(anyhow::anyhow!("Provider error: {}", e));
+                    break;
                 }
             }
+        }
+
+        // Handle error cases or return the last message
+        if let Some(error) = last_error {
+            Err(error)
+        } else {
+            Ok(messages)
         }
     }
 
     /// Add a message to the conversation (for tracking agent responses)
-    pub async fn add_message(&self, message: Message) {
+    async fn add_message(&self, message: Message) {
         let mut conversation = self.conversation.lock().await;
         conversation.push(message);
-    }
-
-    /// Get the full conversation history
-    pub async fn get_conversation(&self) -> Vec<Message> {
-        self.conversation.lock().await.clone()
-    }
-
-    /// Check if the subagent has completed its task
-    pub async fn is_completed(&self) -> bool {
-        matches!(
-            self.get_status().await,
-            SubAgentStatus::Completed(_) | SubAgentStatus::Terminated
-        )
-    }
-
-    /// Terminate the subagent
-    pub async fn terminate(&self) -> Result<(), anyhow::Error> {
-        debug!("Terminating subagent {}", self.id);
-        self.set_status(SubAgentStatus::Terminated).await;
-        Ok(())
-    }
-
-    /// Filter out subagent spawning tools to prevent infinite recursion
-    fn _filter_subagent_tools(tools: Vec<Tool>) -> Vec<Tool> {
-        // TODO: add this in subagent loop
-        tools
     }
 
     /// Build the system prompt for the subagent using the template
@@ -419,10 +299,10 @@ impl SubAgent {
         let tools_with_descriptions: Vec<String> = available_tools
             .iter()
             .map(|t| {
-                if t.description.is_empty() {
-                    t.name.clone()
+                if let Some(description) = &t.description {
+                    format!("{}: {}", t.name, description)
                 } else {
-                    format!("{}: {}", t.name, t.description)
+                    t.name.to_string()
                 }
             })
             .collect();

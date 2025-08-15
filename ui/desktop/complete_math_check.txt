@@ -1,0 +1,62 @@
+COMPLETE MATH VERIFICATION - BOTH LAW FIRMS
+
+KTS TOTALS (from previous calculation):
+- Flat Fee Actual: $362,973
+- Enforcement: $119,678  
+- Special Projects: $172,589
+KTS TOTAL: $655,240
+
+ARENT FOX TOTALS (from June 2025 data):
+
+ARENT FOX INDIVIDUAL BUSINESS UNITS:
+BLOCK (045557):
+- In-Plan (Actual Spend): $121,405
+- Enforcement: $3,398
+- Special Projects: $0
+- Renewals: $331
+- Other: $0
+BLOCK TOTAL = $121,405 + $3,398 + $0 + $331 + $0 = $125,134
+
+SPIRAL (045556):
+- In-Plan (Actual Spend): $9,340
+- Enforcement: $0
+- Special Projects: $0
+- Renewals: $0
+- Other: $0
+SPIRAL TOTAL = $9,340 + $0 + $0 + $0 + $0 = $9,340
+
+SQUARE/WEEBLY (045555/045554):
+- In-Plan (Actual Spend): $150,388
+- Enforcement: $37,902
+- Special Projects: $4,973
+- Renewals: $29,525
+- Other: $13,336
+SQUARE/WEEBLY TOTAL = $150,388 + $37,902 + $4,973 + $29,525 + $13,336 = $236,124
+
+TIDAL (043066):
+- In-Plan (Actual Spend): $40,140
+- Enforcement: $3,012
+- Special Projects: $0
+- Renewals: $19,585
+- Other: $0
+TIDAL TOTAL = $40,140 + $3,012 + $0 + $19,585 + $0 = $62,737
+
+ARENT FOX TOTAL = $125,134 + $9,340 + $236,124 + $62,737 = $433,335
+
+ARENT FOX BREAKDOWN:
+- Flat Fee Actual: $121,405 + $9,340 + $150,388 + $40,140 = $321,273
+- Enforcement: $3,398 + $0 + $37,902 + $3,012 = $44,311
+- Special Projects: $0 + $0 + $4,973 + $0 = $4,973
+- Renewals: $331 + $0 + $29,525 + $19,585 = $49,441
+- Other: $0 + $0 + $13,336 + $0 = $13,336
+
+ARENT FOX TOTAL = $321,273 + $44,311 + $4,973 + $49,441 + $13,336 = $433,334 (rounding difference)
+
+COMBINED TOTALS (KTS + ARENT FOX):
+- Flat Fee Actual: $362,973 + $321,273 = $684,246
+- Enforcement: $119,678 + $44,311 = $163,989
+- Special Projects: $172,589 + $4,973 = $177,562
+- Renewals (AFS only): $49,441
+- Other (AFS only): $13,336
+
+GRAND TOTAL ACTUAL SPEND YTD = $684,246 + $163,989 + $177,562 + $49,441 + $13,336 = $1,088,574

@@ -47,9 +47,9 @@ export default function ProgressiveMessageList({
   appendMessage = () => {},
   isUserMessage,
   onScrollToBottom,
-  batchSize = 15, // Render 15 messages per batch (reduced for better UX)
-  batchDelay = 30, // 30ms delay between batches (faster)
-  showLoadingThreshold = 30, // Only show progressive loading for 30+ messages (lower threshold)
+  batchSize = 20,
+  batchDelay = 20,
+  showLoadingThreshold = 50,
   renderMessage, // Custom render function
   isStreamingMessage = false, // Whether messages are currently being streamed
 }: ProgressiveMessageListProps) {
@@ -141,11 +141,16 @@ export default function ProgressiveMessageList({
 
   // Force complete rendering when search is active
   useEffect(() => {
+    // Only add listener if we're actually loading
+    if (!isLoading) {
+      return;
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMac = window.electron.platform === 'darwin';
       const isSearchShortcut = (isMac ? e.metaKey : e.ctrlKey) && e.key === 'f';
 
-      if (isSearchShortcut && isLoading) {
+      if (isSearchShortcut) {
         // Immediately render all messages when search is triggered
         setRenderedCount(messages.length);
         setIsLoading(false);
@@ -248,14 +253,14 @@ export default function ProgressiveMessageList({
     renderedCount,
     renderMessage,
     isUserMessage,
-    hasContextHandlerContent,
-    getContextHandlerType,
     chat,
     append,
     appendMessage,
     toolCallNotifications,
-    onScrollToBottom,
     isStreamingMessage,
+    hasContextHandlerContent,
+    getContextHandlerType,
+    onScrollToBottom,
   ]);
 
   return (

@@ -4,22 +4,20 @@ use std::sync::Arc;
 use async_stream::try_stream;
 use futures::stream::{self, BoxStream};
 use futures::{Stream, StreamExt};
-use rmcp::model::JsonRpcMessage;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::permission::PermissionLevel;
 use crate::config::PermissionManager;
-use crate::message::{Message, ToolRequest};
 use crate::permission::Permission;
 use mcp_core::ToolResult;
-use rmcp::model::Content;
+use rmcp::model::{Content, ServerNotification};
 
 // ToolCallResult combines the result of a tool call with an optional notification stream that
 // can be used to receive notifications from the tool.
 pub struct ToolCallResult {
     pub result: Box<dyn Future<Output = ToolResult<Vec<Content>>> + Send + Unpin>,
-    pub notification_stream: Option<Box<dyn Stream<Item = JsonRpcMessage> + Send + Unpin>>,
+    pub notification_stream: Option<Box<dyn Stream<Item = ServerNotification> + Send + Unpin>>,
 }
 
 impl From<ToolResult<Vec<Content>>> for ToolCallResult {
@@ -33,6 +31,7 @@ impl From<ToolResult<Vec<Content>>> for ToolCallResult {
 
 use super::agent::{tool_stream, ToolStream};
 use crate::agents::Agent;
+use crate::conversation::message::{Message, ToolRequest};
 
 pub const DECLINED_RESPONSE: &str = "The user has declined to run this tool. \
     DO NOT attempt to call this tool again. \

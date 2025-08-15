@@ -1,10 +1,10 @@
-use crate::message::{Message, MessageContent};
+use crate::conversation::message::{Message, MessageContent};
 use crate::model::ModelConfig;
 use crate::providers::base::Usage;
 use crate::providers::errors::ProviderError;
 use anyhow::{anyhow, Result};
-use mcp_core::tool::{Tool, ToolCall};
-use rmcp::model::Role;
+use mcp_core::ToolCall;
+use rmcp::model::{ErrorCode, ErrorData, Role, Tool};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
@@ -572,8 +572,10 @@ where
                                     Ok(parsed) => parsed,
                                     Err(_) => {
                                         // If parsing fails, create an error tool request
-                                        let error = mcp_core::handler::ToolError::InvalidParameters(
-                                            format!("Could not parse tool arguments: {}", args)
+                                        let error = ErrorData::new(
+                                            ErrorCode::INVALID_PARAMS,
+                                            format!("Could not parse tool arguments: {}", args),
+                                            None,
                                         );
                                         let mut message = Message::new(
                                             Role::Assistant,
@@ -676,6 +678,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversation::message::Message;
+    use rmcp::object;
     use serde_json::json;
 
     #[test]
@@ -858,7 +862,7 @@ mod tests {
             Tool::new(
                 "calculator",
                 "Calculate mathematical expressions",
-                json!({
+                object!({
                     "type": "object",
                     "properties": {
                         "expression": {
@@ -867,12 +871,11 @@ mod tests {
                         }
                     }
                 }),
-                None,
             ),
             Tool::new(
                 "weather",
                 "Get weather information",
-                json!({
+                object!({
                     "type": "object",
                     "properties": {
                         "location": {
@@ -881,7 +884,6 @@ mod tests {
                         }
                     }
                 }),
-                None,
             ),
         ];
 
@@ -912,15 +914,11 @@ mod tests {
 
     #[test]
     fn test_create_request_with_thinking() -> Result<()> {
-        // Save the original env var value if it exists
         let original_value = std::env::var("CLAUDE_THINKING_ENABLED").ok();
-
-        // Set the env var for this test
         std::env::set_var("CLAUDE_THINKING_ENABLED", "true");
 
-        // Execute the test
         let result = (|| {
-            let model_config = ModelConfig::new("claude-3-7-sonnet-20250219".to_string());
+            let model_config = ModelConfig::new_or_fail("claude-3-7-sonnet-20250219");
             let system = "You are a helpful assistant.";
             let messages = vec![Message::user().with_text("Hello")];
             let tools = vec![];
@@ -988,7 +986,8 @@ mod tests {
 
     #[test]
     fn test_tool_error_handling_maintains_pairing() {
-        use mcp_core::handler::ToolError;
+        use crate::conversation::message::Message;
+        use rmcp::model::{ErrorCode, ErrorData};
 
         let messages = vec![
             Message::assistant().with_tool_request(
@@ -997,7 +996,11 @@ mod tests {
             ),
             Message::user().with_tool_response(
                 "tool_1",
-                Err(ToolError::ExecutionError("Tool failed".to_string())),
+                Err(ErrorData::new(
+                    ErrorCode::INTERNAL_ERROR,
+                    "Tool failed".to_string(),
+                    None,
+                )),
             ),
         ];
 
@@ -1015,7 +1018,7 @@ mod tests {
         assert_eq!(spec[1]["content"][0]["tool_use_id"], "tool_1");
         assert_eq!(
             spec[1]["content"][0]["content"],
-            "Error: Execution failed: Tool failed"
+            "Error: -32603: Tool failed"
         );
         assert_eq!(spec[1]["content"][0]["is_error"], true);
     }

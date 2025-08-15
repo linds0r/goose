@@ -5,9 +5,10 @@
 use crate::agents::subagent_execution_tool::tasks_manager::TasksManager;
 use crate::agents::subagent_execution_tool::{lib::ExecutionMode, task_types::Task};
 use crate::agents::tool_execution::ToolCallResult;
-use mcp_core::{tool::ToolAnnotations, Tool, ToolError};
-use rmcp::model::Content;
+use rmcp::model::{Content, ErrorCode, ErrorData, Tool, ToolAnnotations};
+use rmcp::object;
 use serde_json::{json, Value};
+use std::borrow::Cow;
 
 pub const DYNAMIC_TASK_TOOL_NAME_PREFIX: &str = "dynamic_task__create_task";
 
@@ -32,13 +33,10 @@ pub fn create_dynamic_task_tool() -> Tool {
                 text_instruction: Search for the config file in the root directory.
             Examples of 'task_parameters' for multiple tasks:
                 text_instruction: Get weather for Melbourne.
-                timeout_seconds: 300
                 text_instruction: Get weather for Los Angeles.
-                timeout_seconds: 300
                 text_instruction: Get weather for San Francisco.
-                timeout_seconds: 300
             ".to_string(),
-        json!({
+        object!({
             "type": "object",
             "properties": {
                 "task_parameters": {
@@ -54,25 +52,19 @@ pub fn create_dynamic_task_tool() -> Tool {
                                 "type": "string",
                                 "description": "The text instruction to execute"
                             },
-                            "timeout_seconds": {
-                                "type": "integer",
-                                "description": "Optional timeout for the task in seconds (default: 300)",
-                                "minimum": 1
-                            }
                         },
                         "required": ["text_instruction"]
                     }
                 }
             }
-        }),
-        Some(ToolAnnotations {
-            title: Some("Dynamic Task Creation".to_string()),
-            read_only_hint: false,
-            destructive_hint: true,
-            idempotent_hint: false,
-            open_world_hint: true,
-        }),
-    )
+        })
+    ).annotate(ToolAnnotations {
+        title: Some("Dynamic Task Creation".to_string()),
+        read_only_hint: Some(false),
+        destructive_hint: Some(true),
+        idempotent_hint: Some(false),
+        open_world_hint: Some(true),
+    })
 }
 
 fn extract_task_parameters(params: &Value) -> Vec<Value> {
@@ -118,9 +110,11 @@ pub async fn create_dynamic_task(params: Value, tasks_manager: &TasksManager) ->
     let task_params_array = extract_task_parameters(&params);
 
     if task_params_array.is_empty() {
-        return ToolCallResult::from(Err(ToolError::ExecutionError(
-            "No task parameters provided".to_string(),
-        )));
+        return ToolCallResult::from(Err(ErrorData {
+            code: ErrorCode::INTERNAL_ERROR,
+            message: Cow::from("No task parameters provided"),
+            data: None,
+        }));
     }
 
     let tasks = create_text_instruction_tasks_from_params(&task_params_array);
@@ -137,10 +131,11 @@ pub async fn create_dynamic_task(params: Value, tasks_manager: &TasksManager) ->
     let tasks_json = match serde_json::to_string(&task_execution_payload) {
         Ok(json) => json,
         Err(e) => {
-            return ToolCallResult::from(Err(ToolError::ExecutionError(format!(
-                "Failed to serialize task list: {}",
-                e
-            ))))
+            return ToolCallResult::from(Err(ErrorData {
+                code: ErrorCode::INTERNAL_ERROR,
+                message: Cow::from(format!("Failed to serialize task list: {}", e)),
+                data: None,
+            }))
         }
     };
     tasks_manager.save_tasks(tasks.clone()).await;

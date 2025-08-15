@@ -1,0 +1,79 @@
+MATH VERIFICATION - YTD Spend Calculation
+
+From the June 2025 data, let me extract the YTD totals:
+
+OVERALL (Main business):
+- In-Plan (Actual Spend): $429,668
+- Enforcement (Not In-Plan): $59,598  
+- Special Projects (Not In-Plan): $86,211
+OVERALL TOTAL = $429,668 + $59,598 + $86,211 = $575,477
+
+AFTERPAY:
+- In-Plan (Actual Spend): $17,556
+- Enforcement (Not In-Plan): ($4,486) [negative number]
+- Special Projects (Not In-Plan): $1,229
+AFTERPAY TOTAL = $17,556 + (-$4,486) + $1,229 = $14,299
+
+CASH APP:
+- In-Plan (Actual Spend): $215,402
+- Enforcement (Not In-Plan): $9,248
+- Special Projects (Not In-Plan): $3,067
+CASH APP TOTAL = $215,402 + $9,248 + $3,067 = $227,717
+
+PROTO/BITKEY:
+- In-Plan (Actual Spend): $100,434
+- Enforcement (Not In-Plan): $48,432
+- Special Projects (Not In-Plan): $9,000
+PROTO/BITKEY TOTAL = $100,434 + $48,432 + $9,000 = $157,866
+
+TBD:
+- In-Plan (Actual Spend): $69,705
+- Enforcement (Not In-Plan): $2,450
+- Special Projects (Not In-Plan): $9,063
+TBD TOTAL = $69,705 + $2,450 + $9,063 = $81,218
+
+RENEWALS:
+- In-Plan (Actual Spend): $26,571
+- Enforcement (Not In-Plan): $0
+- Special Projects (Not In-Plan): $0
+RENEWALS TOTAL = $26,571 + $0 + $0 = $26,571
+
+OTHER:
+- In-Plan (Actual Spend): $53,910
+- Enforcement (Not In-Plan): $3,955
+- Special Projects (Not In-Plan): $63,852
+OTHER TOTAL = $53,910 + $3,955 + $63,852 = $121,717
+
+GRAND TOTAL CHECK:
+$575,477 + $14,299 + $227,717 + $157,866 + $81,218 + $26,571 + $121,717
+
+Wait... this doesn't make sense. The "OVERALL" section appears to be a summary, not an additional business unit.
+
+Let me recalculate by adding up all the individual business units:
+
+TOTAL ACTUAL SPEND YTD = 
+Afterpay: $14,299
+Cash App: $227,717  
+Proto/Bitkey: $157,866
+TBD: $81,218
+Renewals: $26,571
+Other: $121,717
+
+TOTAL = $14,299 + $227,717 + $157,866 + $81,218 + $26,571 + $121,717 = $629,388
+
+But wait, let me check if the "OVERALL" row is actually the sum or if it's separate...
+
+Looking at the flat fee budgets:
+- Overall Annual Fee = $1,050,000 (YTD = $525,000)
+- Afterpay Annual Fee = $100,000 (YTD = $50,000)  
+- Cash App Annual Fee = $300,000 (YTD = $150,000)
+- Proto/Bitkey Annual Fee = $300,000 (YTD = $150,000)
+- TBD Annual Fee = $300,000 (YTD = $150,000)
+- Renewals Annual Fee = $50,000 (YTD = $25,000)
+- Other Annual Fee = $0
+
+Sum of individual units: $50,000 + $150,000 + $150,000 + $150,000 + $25,000 + $0 = $525,000
+
+This matches the "OVERALL" flat fee of $525,000, confirming that "OVERALL" is indeed a summary row, not an additional business unit.
+
+CORRECT TOTAL ACTUAL SPEND YTD = $629,388

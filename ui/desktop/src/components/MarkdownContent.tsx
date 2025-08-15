@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Check, Copy } from './icons';
+import { wrapHTMLInCodeBlock } from '../utils/htmlSecurity';
 
 interface CodeProps extends React.ClassAttributes<HTMLElement>, React.HTMLAttributes<HTMLElement> {
   inline?: boolean;
@@ -16,15 +17,30 @@ interface MarkdownContentProps {
 
 const CodeBlock = ({ language, children }: { language: string; children: string }) => {
   const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef<number | null>(null);
+
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(children);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000); // Reset after 2 seconds
+
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
+
+      timeoutRef.current = window.setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       console.error('Failed to copy text: ', err);
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="relative group w-full">
@@ -76,37 +92,19 @@ const MarkdownCode = React.forwardRef(function MarkdownCode(
   );
 });
 
-// Detect if content contains HTML
-const containsHTML = (str: string) => {
-  const htmlRegex = /<[^>]*>/;
-  return htmlRegex.test(str);
-};
-
-// Wrap HTML content in code blocks
-const wrapHTMLInCodeBlock = (content: string) => {
-  if (containsHTML(content)) {
-    // Split content by code blocks to preserve existing ones
-    const parts = content.split(/(```[\s\S]*?```)/g);
-    return parts
-      .map((part) => {
-        // If part is already a code block, leave it as is
-        if (part.startsWith('```') && part.endsWith('```')) {
-          return part;
-        }
-        // If part contains HTML, wrap it in HTML code block
-        if (containsHTML(part)) {
-          return `\`\`\`html\n${part}\n\`\`\``;
-        }
-        return part;
-      })
-      .join('\n');
-  }
-  return content;
-};
-
 export default function MarkdownContent({ content, className = '' }: MarkdownContentProps) {
-  // Process content before rendering
-  const processedContent = wrapHTMLInCodeBlock(content);
+  const [processedContent, setProcessedContent] = useState(content);
+
+  useEffect(() => {
+    try {
+      const processed = wrapHTMLInCodeBlock(content);
+      setProcessedContent(processed);
+    } catch (error) {
+      console.error('Error processing content:', error);
+      // Fallback to original content if processing fails
+      setProcessedContent(content);
+    }
+  }, [content]);
 
   return (
     <div className="w-full overflow-x-hidden">
@@ -127,7 +125,6 @@ export default function MarkdownContent({ content, className = '' }: MarkdownCon
           prose-ol:my-2
           prose-ul:mt-0 prose-ul:mb-3
           prose-li:m-0
-
           ${className}`}
         components={{
           a: ({ ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,

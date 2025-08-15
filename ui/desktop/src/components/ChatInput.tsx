@@ -1,17 +1,17 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { FolderKey } from 'lucide-react';
+import { FolderKey, ScrollText } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/Tooltip';
 import { Button } from './ui/button';
 import type { View } from '../App';
 import Stop from './ui/Stop';
 import { Attach, Send, Close, Microphone } from './icons';
+import { ChatState } from '../types/chatState';
 import { debounce } from 'lodash';
 import { LocalMessageStorage } from '../utils/localMessageStorage';
 import { Message } from '../types/message';
 import { DirSwitcher } from './bottom_menu/DirSwitcher';
 import ModelsBottomBar from './settings/models/bottom_bar/ModelsBottomBar';
 import { BottomMenuModeSelection } from './bottom_menu/BottomMenuModeSelection';
-import { ManualSummarizeButton } from './context_management/ManualSummaryButton';
 import { AlertType, useAlerts } from './alerts';
 import { useToolCount } from './alerts/useToolCount';
 import { useConfig } from './ConfigContext';
@@ -52,7 +52,7 @@ interface ModelLimit {
 
 interface ChatInputProps {
   handleSubmit: (e: React.FormEvent) => void;
-  isLoading?: boolean;
+  chatState: ChatState;
   onStop?: () => void;
   commandHistory?: string[]; // Current chat's message history
   initialValue?: string;
@@ -74,11 +74,13 @@ interface ChatInputProps {
   setIsGoosehintsModalOpen?: (isOpen: boolean) => void;
   disableAnimation?: boolean;
   recipeConfig?: Recipe | null;
+  recipeAccepted?: boolean;
+  initialPrompt?: string;
 }
 
 export default function ChatInput({
   handleSubmit,
-  isLoading = false,
+  chatState = ChatState.Idle,
   onStop,
   commandHistory = [],
   initialValue = '',
@@ -94,15 +96,20 @@ export default function ChatInput({
   sessionCosts,
   setIsGoosehintsModalOpen,
   recipeConfig,
+  recipeAccepted,
+  initialPrompt,
 }: ChatInputProps) {
   const [_value, setValue] = useState(initialValue);
   const [displayValue, setDisplayValue] = useState(initialValue); // For immediate visual feedback
   const [isFocused, setIsFocused] = useState(false);
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
+
+  // Derived state - chatState != Idle means we're in some form of loading state
+  const isLoading = chatState !== ChatState.Idle;
   const { alerts, addAlert, clearAlerts } = useAlerts();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const toolCount = useToolCount();
-  const { isLoadingSummary } = useChatContextManager();
+  const { isLoadingCompaction, handleManualCompaction } = useChatContextManager();
   const { getProviders, read } = useConfig();
   const { getCurrentModelAndProvider, currentModel, currentProvider } = useModelAndProvider();
   const [tokenLimit, setTokenLimit] = useState<number>(TOKEN_LIMIT_DEFAULT);
@@ -196,6 +203,18 @@ export default function ChatInput({
     setHasUserTyped(false);
   }, [initialValue]); // Keep only initialValue as a dependency
 
+  // Handle recipe prompt updates
+  useEffect(() => {
+    // If recipe is accepted and we have an initial prompt, and no messages yet, set the prompt
+    if (recipeAccepted && initialPrompt && messages.length === 0 && !displayValue.trim()) {
+      setDisplayValue(initialPrompt);
+      setValue(initialPrompt);
+      setTimeout(() => {
+        textAreaRef.current?.focus();
+      }, 0);
+    }
+  }, [recipeAccepted, initialPrompt, messages.length, displayValue]);
+
   // Draft functionality - load draft if no initial value or recipe
   useEffect(() => {
     // Reset draft loaded flag when context changes
@@ -235,6 +254,7 @@ export default function ChatInput({
   const [isInGlobalHistory, setIsInGlobalHistory] = useState(false);
   const [hasUserTyped, setHasUserTyped] = useState(false);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const timeoutRefsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   // Use shared file drop hook for ChatInput
   const {
@@ -395,11 +415,11 @@ export default function ChatInput({
         // Only show warning alert when approaching limit
         addAlert({
           type: AlertType.Warning,
-          message: `Approaching token limit (${numTokens.toLocaleString()}/${tokenLimit.toLocaleString()}) \n You're reaching the model's conversation limit. The session will be saved — copy anything important and start a new one to continue.`,
+          message: `Approaching token limit (${numTokens.toLocaleString()}/${tokenLimit.toLocaleString()}) \n You're reaching the model's conversation limit. Consider compacting the conversation to continue.`,
           autoShow: true, // Auto-show token limit warnings
         });
       } else {
-        // Show info alert only when not in warning/error state
+        // Show info alert with summarize button
         addAlert({
           type: AlertType.Info,
           message: 'Context window',
@@ -407,6 +427,11 @@ export default function ChatInput({
             current: numTokens,
             total: tokenLimit,
           },
+          showSummarizeButton: true,
+          onSummarize: () => {
+            handleManualCompaction(messages, setMessages);
+          },
+          summarizeIcon: <ScrollText size={12} />,
         });
       }
     } else if (isTokenLimitLoaded && tokenLimit) {
@@ -418,6 +443,14 @@ export default function ChatInput({
           current: 0,
           total: tokenLimit,
         },
+        showSummarizeButton: messages.length > 0,
+        onSummarize:
+          messages.length > 0
+            ? () => {
+                handleManualCompaction(messages, setMessages);
+              }
+            : undefined,
+        summarizeIcon: messages.length > 0 ? <ScrollText size={12} /> : undefined,
       });
     }
 
@@ -428,7 +461,7 @@ export default function ChatInput({
         message: `Too many tools can degrade performance.\nTool count: ${toolCount} (recommend: ${TOOLS_MAX_SUGGESTED})`,
         action: {
           text: 'View extensions',
-          onClick: () => setView('settings'),
+          onClick: () => setView('extensions'),
         },
         autoShow: false, // Don't auto-show tool count warnings
       });
@@ -437,25 +470,50 @@ export default function ChatInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [numTokens, toolCount, tokenLimit, isTokenLimitLoaded, addAlert, clearAlerts]);
 
+  // Cleanup effect for component unmount - prevent memory leaks
+  useEffect(() => {
+    return () => {
+      // Clear any pending timeouts from image processing
+      setPastedImages((currentImages) => {
+        currentImages.forEach((img) => {
+          if (img.filePath) {
+            try {
+              window.electron.deleteTempFile(img.filePath);
+            } catch (error) {
+              console.error('Error deleting temp file:', error);
+            }
+          }
+        });
+        return [];
+      });
+
+      // Clear all tracked timeouts
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const timeouts = timeoutRefsRef.current;
+      timeouts.forEach((timeoutId) => {
+        window.clearTimeout(timeoutId);
+      });
+      timeouts.clear();
+
+      // Clear alerts to prevent memory leaks
+      clearAlerts();
+    };
+  }, [clearAlerts]);
+
   const maxHeight = 10 * 24;
 
-  // Debounced function to update actual value
-  const debouncedSetValue = useMemo(
-    () =>
-      debounce((value: string) => {
-        setValue(value);
-      }, 150),
-    [setValue]
-  );
+  // Immediate function to update actual value - no debounce for better responsiveness
+  const updateValue = React.useCallback((value: string) => {
+    setValue(value);
+  }, []);
 
-  // Debounced autosize function
   const debouncedAutosize = useMemo(
     () =>
       debounce((element: HTMLTextAreaElement) => {
         element.style.height = '0px'; // Reset height
         const scrollHeight = element.scrollHeight;
         element.style.height = Math.min(scrollHeight, maxHeight) + 'px';
-      }, 150),
+      }, 50),
     [maxHeight]
   );
 
@@ -477,7 +535,7 @@ export default function ChatInput({
     const cursorPosition = evt.target.selectionStart;
 
     setDisplayValue(val); // Update display immediately
-    debouncedSetValue(val); // Debounce the actual state update
+    updateValue(val); // Update actual value immediately for better responsiveness
     debouncedSaveDraft(val); // Save draft with debounce
     // Mark that the user has typed something
     setHasUserTyped(true);
@@ -540,10 +598,12 @@ export default function ChatInput({
         },
       ]);
 
-      // Remove the error message after 5 seconds
-      setTimeout(() => {
+      // Remove the error message after 5 seconds with cleanup tracking
+      const timeoutId = setTimeout(() => {
         setPastedImages((prev) => prev.filter((img) => !img.id.startsWith('error-')));
+        timeoutRefsRef.current.delete(timeoutId);
       }, 5000);
+      timeoutRefsRef.current.add(timeoutId);
 
       return;
     }
@@ -564,10 +624,12 @@ export default function ChatInput({
           error: `Image too large (${Math.round(file.size / (1024 * 1024))}MB). Maximum ${MAX_IMAGE_SIZE_MB}MB allowed.`,
         });
 
-        // Remove the error message after 5 seconds
-        setTimeout(() => {
+        // Remove the error message after 5 seconds with cleanup tracking
+        const timeoutId = setTimeout(() => {
           setPastedImages((prev) => prev.filter((img) => img.id !== errorId));
+          timeoutRefsRef.current.delete(timeoutId);
         }, 5000);
+        timeoutRefsRef.current.add(timeoutId);
 
         continue;
       }
@@ -632,11 +694,10 @@ export default function ChatInput({
   // Cleanup debounced functions on unmount
   useEffect(() => {
     return () => {
-      debouncedSetValue.cancel?.();
       debouncedAutosize.cancel?.();
       debouncedSaveDraft.cancel?.();
     };
-  }, [debouncedSetValue, debouncedAutosize, debouncedSaveDraft]);
+  }, [debouncedAutosize, debouncedSaveDraft]);
 
   // Handlers for composition events, which are crucial for proper IME behavior
   const handleCompositionStart = () => {
@@ -831,7 +892,7 @@ export default function ChatInput({
       evt.preventDefault();
       const canSubmit =
         !isLoading &&
-        !isLoadingSummary &&
+        !isLoadingCompaction &&
         (displayValue.trim() ||
           pastedImages.some((img) => img.filePath && !img.error && !img.isLoading) ||
           allDroppedFiles.some((file) => !file.error && !file.isLoading));
@@ -845,7 +906,7 @@ export default function ChatInput({
     e.preventDefault();
     const canSubmit =
       !isLoading &&
-      !isLoadingSummary &&
+      !isLoadingCompaction &&
       (displayValue.trim() ||
         pastedImages.some((img) => img.filePath && !img.error && !img.isLoading) ||
         allDroppedFiles.some((file) => !file.error && !file.isLoading));
@@ -945,7 +1006,7 @@ export default function ChatInput({
         {/* Inline action buttons on the right */}
         <div className="flex items-center gap-1 px-2 relative">
           {/* Microphone button - show if dictation is enabled, disable if not configured */}
-          {dictationSettings?.enabled && (
+          {(dictationSettings?.enabled || dictationSettings?.provider === null) && (
             <>
               {!canUseDictation ? (
                 <Tooltip>
@@ -965,11 +1026,24 @@ export default function ChatInput({
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {dictationSettings.provider === 'openai'
-                      ? 'OpenAI API key is not configured. Set it up in Settings > Models.'
-                      : dictationSettings.provider === 'elevenlabs'
-                        ? 'ElevenLabs API key is not configured. Set it up in Settings > Chat > Voice Dictation.'
-                        : 'Dictation provider is not properly configured.'}
+                    {dictationSettings.provider === 'openai' ? (
+                      <p>
+                        OpenAI API key is not configured. Set it up in <b>Settings</b> {'>'}{' '}
+                        <b>Models.</b>
+                      </p>
+                    ) : dictationSettings.provider === 'elevenlabs' ? (
+                      <p>
+                        ElevenLabs API key is not configured. Set it up in <b>Settings</b> {'>'}{' '}
+                        <b>Chat</b> {'>'} <b>Voice Dictation.</b>
+                      </p>
+                    ) : dictationSettings.provider === null ? (
+                      <p>
+                        Dictation is not configured. Configure it in <b>Settings</b> {'>'}{' '}
+                        <b>Chat</b> {'>'} <b>Voice Dictation.</b>
+                      </p>
+                    ) : (
+                      <p>Dictation provider is not properly configured.</p>
+                    )}
                   </TooltipContent>
                 </Tooltip>
               ) : (
@@ -1024,7 +1098,7 @@ export default function ChatInput({
                 isAnyDroppedFileLoading ||
                 isRecording ||
                 isTranscribing ||
-                isLoadingSummary
+                isLoadingCompaction
               }
               className={`rounded-full px-10 py-2 flex items-center gap-2 ${
                 !hasSubmittableContent ||
@@ -1032,12 +1106,12 @@ export default function ChatInput({
                 isAnyDroppedFileLoading ||
                 isRecording ||
                 isTranscribing ||
-                isLoadingSummary
+                isLoadingCompaction
                   ? 'bg-slate-600 text-white cursor-not-allowed opacity-50 border-slate-600'
                   : 'bg-slate-600 text-white hover:bg-slate-700 border-slate-600 hover:cursor-pointer'
               }`}
               title={
-                isLoadingSummary
+                isLoadingCompaction
                   ? 'Summarizing conversation...'
                   : isAnyImageLoading
                     ? 'Waiting for images to save...'
@@ -1190,7 +1264,7 @@ export default function ChatInput({
       {/* Secondary actions and controls row below input */}
       <div className="flex flex-row items-center gap-1 p-2 relative">
         {/* Directory path */}
-        <DirSwitcher hasMessages={messages.length > 0} className="mr-0" />
+        <DirSwitcher className="mr-0" />
         <div className="w-px h-4 bg-border-default mx-2" />
 
         {/* Attach button */}
@@ -1237,13 +1311,6 @@ export default function ChatInput({
           </Tooltip>
           <div className="w-px h-4 bg-border-default mx-2" />
           <BottomMenuModeSelection />
-          {messages.length > 0 && (
-            <ManualSummarizeButton
-              messages={messages}
-              isLoading={isLoading}
-              setMessages={setMessages}
-            />
-          )}
           <div className="w-px h-4 bg-border-default mx-2" />
           <div className="flex items-center h-full">
             <Tooltip>

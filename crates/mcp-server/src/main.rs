@@ -1,11 +1,15 @@
 use anyhow::Result;
 use mcp_core::handler::{PromptError, ResourceError};
-use mcp_core::tool::ToolAnnotations;
-use mcp_core::{handler::ToolError, protocol::ServerCapabilities, tool::Tool};
+use mcp_core::protocol::ServerCapabilities;
 use mcp_server::router::{CapabilitiesBuilder, RouterService};
 use mcp_server::{ByteTransport, Router, Server};
-use rmcp::model::{Content, JsonRpcMessage, Prompt, PromptArgument, RawResource, Resource};
+use rmcp::model::{
+    Content, ErrorCode, ErrorData, JsonRpcMessage, Prompt, PromptArgument, RawResource, Resource,
+    Tool, ToolAnnotations,
+};
+use rmcp::object;
 use serde_json::Value;
+use std::borrow::Cow;
 use std::{future::Future, pin::Pin, sync::Arc};
 use tokio::sync::mpsc;
 use tokio::{
@@ -28,19 +32,19 @@ impl CounterRouter {
         }
     }
 
-    async fn increment(&self) -> Result<i32, ToolError> {
+    async fn increment(&self) -> Result<i32, ErrorData> {
         let mut counter = self.counter.lock().await;
         *counter += 1;
         Ok(*counter)
     }
 
-    async fn decrement(&self) -> Result<i32, ToolError> {
+    async fn decrement(&self) -> Result<i32, ErrorData> {
         let mut counter = self.counter.lock().await;
         *counter -= 1;
         Ok(*counter)
     }
 
-    async fn get_value(&self) -> Result<i32, ToolError> {
+    async fn get_value(&self) -> Result<i32, ErrorData> {
         let counter = self.counter.lock().await;
         Ok(*counter)
     }
@@ -72,51 +76,51 @@ impl Router for CounterRouter {
             Tool::new(
                 "increment".to_string(),
                 "Increment the counter by 1".to_string(),
-                serde_json::json!({
+                object!({
                     "type": "object",
                     "properties": {},
                     "required": []
                 }),
-                Some(ToolAnnotations {
-                    title: Some("Increment Tool".to_string()),
-                    read_only_hint: false,
-                    destructive_hint: false,
-                    idempotent_hint: false,
-                    open_world_hint: false,
-                }),
-            ),
+            )
+            .annotate(ToolAnnotations {
+                title: Some("Increment Tool".to_string()),
+                read_only_hint: Some(false),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(false),
+                open_world_hint: Some(false),
+            }),
             Tool::new(
                 "decrement".to_string(),
                 "Decrement the counter by 1".to_string(),
-                serde_json::json!({
+                object!({
                     "type": "object",
                     "properties": {},
                     "required": []
                 }),
-                Some(ToolAnnotations {
-                    title: Some("Decrement Tool".to_string()),
-                    read_only_hint: false,
-                    destructive_hint: false,
-                    idempotent_hint: false,
-                    open_world_hint: false,
-                }),
-            ),
+            )
+            .annotate(ToolAnnotations {
+                title: Some("Decrement Tool".to_string()),
+                read_only_hint: Some(false),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(false),
+                open_world_hint: Some(false),
+            }),
             Tool::new(
                 "get_value".to_string(),
                 "Get the current counter value".to_string(),
-                serde_json::json!({
+                object!({
                     "type": "object",
                     "properties": {},
                     "required": []
                 }),
-                Some(ToolAnnotations {
-                    title: Some("Get Value Tool".to_string()),
-                    read_only_hint: true,
-                    destructive_hint: false,
-                    idempotent_hint: false,
-                    open_world_hint: false,
-                }),
-            ),
+            )
+            .annotate(ToolAnnotations {
+                title: Some("Get Value Tool".to_string()),
+                read_only_hint: Some(true),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(false),
+                open_world_hint: Some(false),
+            }),
         ]
     }
 
@@ -125,7 +129,7 @@ impl Router for CounterRouter {
         tool_name: &str,
         _arguments: Value,
         _notifier: mpsc::Sender<JsonRpcMessage>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<Content>, ToolError>> + Send + 'static>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<Content>, ErrorData>> + Send + 'static>> {
         let this = self.clone();
         let tool_name = tool_name.to_string();
 
@@ -143,7 +147,11 @@ impl Router for CounterRouter {
                     let value = this.get_value().await?;
                     Ok(vec![Content::text(value.to_string())])
                 }
-                _ => Err(ToolError::NotFound(format!("Tool {} not found", tool_name))),
+                _ => Err(ErrorData {
+                    code: ErrorCode::INVALID_REQUEST,
+                    message: Cow::from(format!("Tool {} not found", tool_name)),
+                    data: None,
+                }),
             }
         })
     }

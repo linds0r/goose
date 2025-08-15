@@ -5,7 +5,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use futures::StreamExt;
 use goose::agents::{Agent, AgentEvent};
-use goose::message::Message;
+use goose::conversation::message::Message;
+use goose::conversation::Conversation;
 use goose::model::ModelConfig;
 use goose::providers::base::Provider;
 use goose::providers::{
@@ -108,7 +109,8 @@ async fn run_truncate_test(
     model: &str,
     context_window: usize,
 ) -> Result<()> {
-    let model_config = ModelConfig::new(model.to_string())
+    let model_config = ModelConfig::new(model)
+        .unwrap()
         .with_context_limit(Some(context_window))
         .with_temperature(Some(0.0));
     let provider = provider_type.create_provider(model_config)?;
@@ -117,7 +119,7 @@ async fn run_truncate_test(
     agent.update_provider(provider).await?;
     let repeat_count = context_window + 10_000;
     let large_message_content = "hello ".repeat(repeat_count);
-    let messages = vec![
+    let messages = Conversation::new(vec![
         Message::user().with_text("hi there. what is 2 + 2?"),
         Message::assistant().with_text("hey! I think it's 4."),
         Message::user().with_text(&large_message_content),
@@ -127,9 +129,10 @@ async fn run_truncate_test(
         Message::user().with_text(
             "did I ask you what's 2+2 in this message history? just respond with 'yes' or 'no'",
         ),
-    ];
+    ])
+    .unwrap();
 
-    let reply_stream = agent.reply(&messages, None, None).await?;
+    let reply_stream = agent.reply(messages, None, None).await?;
     tokio::pin!(reply_stream);
 
     let mut responses = Vec::new();
@@ -142,7 +145,9 @@ async fn run_truncate_test(
             Ok(AgentEvent::ModelChange { .. }) => {
                 // Model change events are informational, just continue
             }
-
+            Ok(AgentEvent::HistoryReplaced(_)) => {
+                // Handle history replacement events if needed
+            }
             Err(e) => {
                 println!("Error: {:?}", e);
                 return Err(e);
@@ -151,23 +156,28 @@ async fn run_truncate_test(
     }
 
     println!("Responses: {responses:?}\n");
-    assert_eq!(responses.len(), 1);
 
     // Ollama and OpenRouter truncate by default even when the context window is exceeded
-    // We don't have control over the truncation behavior in these providers
+    // We don't have control over the truncation behavior in these providers.
+    // Skip the strict assertions for these providers.
     if provider_type == ProviderType::Ollama || provider_type == ProviderType::OpenRouter {
-        println!("WARNING: Skipping test for {:?} because it truncates by default when the context window is exceeded", provider_type);
+        println!(
+            "WARNING: Skipping test for {:?} because it truncates by default when the context window is exceeded",
+            provider_type
+        );
         return Ok(());
     }
+
+    assert_eq!(responses.len(), 1);
 
     assert_eq!(responses[0].content.len(), 1);
 
     match responses[0].content[0] {
-        goose::message::MessageContent::Text(ref text_content) => {
+        goose::conversation::message::MessageContent::Text(ref text_content) => {
             assert!(text_content.text.to_lowercase().contains("no"));
             assert!(!text_content.text.to_lowercase().contains("yes"));
         }
-        goose::message::MessageContent::ContextLengthExceeded(_) => {
+        goose::conversation::message::MessageContent::ContextLengthExceeded(_) => {
             // This is an acceptable outcome for providers that don't truncate themselves
             // and correctly report that the context length was exceeded.
             println!(
@@ -448,6 +458,8 @@ mod schedule_tool_tests {
         let tool = schedule_tool.unwrap();
         assert!(tool
             .description
+            .clone()
+            .unwrap_or_default()
             .contains("Manage scheduled recipe execution"));
     }
 
@@ -478,6 +490,8 @@ mod schedule_tool_tests {
         let tool = schedule_tool.unwrap();
         assert!(tool
             .description
+            .clone()
+            .unwrap_or_default()
             .contains("Manage scheduled recipe execution"));
 
         // Verify the tool has the expected actions in its schema
@@ -539,16 +553,18 @@ mod final_output_tool_tests {
     use goose::agents::final_output_tool::{
         FINAL_OUTPUT_CONTINUATION_MESSAGE, FINAL_OUTPUT_TOOL_NAME,
     };
+    use goose::conversation::Conversation;
     use goose::providers::base::MessageStream;
     use goose::recipe::Response;
 
     #[tokio::test]
     async fn test_final_output_assistant_message_in_reply() -> Result<()> {
         use async_trait::async_trait;
+        use goose::conversation::message::Message;
         use goose::model::ModelConfig;
         use goose::providers::base::{Provider, ProviderUsage, Usage};
         use goose::providers::errors::ProviderError;
-        use mcp_core::tool::Tool;
+        use rmcp::model::Tool;
 
         #[derive(Clone)]
         struct MockProvider {
@@ -580,7 +596,7 @@ mod final_output_tool_tests {
 
         let agent = Agent::new();
 
-        let model_config = ModelConfig::new("test-model".to_string());
+        let model_config = ModelConfig::new("test-model").unwrap();
         let mock_provider = Arc::new(MockProvider { model_config });
         agent.update_provider(mock_provider).await?;
 
@@ -619,7 +635,7 @@ mod final_output_tool_tests {
         );
 
         // Simulate the reply stream continuing after the final output tool call.
-        let reply_stream = agent.reply(&vec![], None, None).await?;
+        let reply_stream = agent.reply(Conversation::empty(), None, None).await?;
         tokio::pin!(reply_stream);
 
         let mut responses = Vec::new();
@@ -645,10 +661,11 @@ mod final_output_tool_tests {
     #[tokio::test]
     async fn test_when_final_output_not_called_in_reply() -> Result<()> {
         use async_trait::async_trait;
+        use goose::conversation::message::Message;
         use goose::model::ModelConfig;
         use goose::providers::base::{Provider, ProviderUsage};
         use goose::providers::errors::ProviderError;
-        use mcp_core::tool::Tool;
+        use rmcp::model::Tool;
 
         #[derive(Clone)]
         struct MockProvider {
@@ -700,7 +717,7 @@ mod final_output_tool_tests {
 
         let agent = Agent::new();
 
-        let model_config = ModelConfig::new("test-model".to_string());
+        let model_config = ModelConfig::new("test-model").unwrap();
         let mock_provider = Arc::new(MockProvider { model_config });
         agent.update_provider(mock_provider).await?;
 
@@ -716,7 +733,7 @@ mod final_output_tool_tests {
         agent.add_final_output_tool(response).await;
 
         // Simulate the reply stream being called.
-        let reply_stream = agent.reply(&vec![], None, None).await?;
+        let reply_stream = agent.reply(Conversation::empty(), None, None).await?;
         tokio::pin!(reply_stream);
 
         let mut responses = Vec::new();
@@ -766,10 +783,12 @@ mod retry_tests {
     use super::*;
     use async_trait::async_trait;
     use goose::agents::types::{RetryConfig, SessionConfig, SuccessCheck};
+    use goose::conversation::message::Message;
+    use goose::conversation::Conversation;
     use goose::model::ModelConfig;
     use goose::providers::base::{Provider, ProviderUsage, Usage};
     use goose::providers::errors::ProviderError;
-    use mcp_core::tool::Tool;
+    use rmcp::model::Tool;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -816,7 +835,7 @@ mod retry_tests {
     async fn test_retry_config_validation_integration() -> Result<()> {
         let agent = Agent::new();
 
-        let model_config = ModelConfig::new("test-model".to_string());
+        let model_config = ModelConfig::new("test-model").unwrap();
         let mock_provider = Arc::new(MockRetryProvider {
             model_config,
             call_count: Arc::new(AtomicUsize::new(0)),
@@ -848,10 +867,11 @@ mod retry_tests {
             retry_config: Some(retry_config),
         };
 
-        let initial_messages = vec![Message::user().with_text("Complete this task")];
+        let conversation =
+            Conversation::new(vec![Message::user().with_text("Complete this task")]).unwrap();
 
         let reply_stream = agent
-            .reply(&initial_messages, Some(session_config), None)
+            .reply(conversation, Some(session_config), None)
             .await?;
         tokio::pin!(reply_stream);
 
@@ -945,12 +965,14 @@ mod retry_tests {
 mod max_turns_tests {
     use super::*;
     use async_trait::async_trait;
-    use goose::message::MessageContent;
+    use goose::conversation::message::{Message, MessageContent};
+    use goose::conversation::Conversation;
     use goose::model::ModelConfig;
     use goose::providers::base::{Provider, ProviderMetadata, ProviderUsage, Usage};
     use goose::providers::errors::ProviderError;
     use goose::session::storage::Identifier;
-    use mcp_core::tool::{Tool, ToolCall};
+    use mcp_core::tool::ToolCall;
+    use rmcp::model::Tool;
     use std::path::PathBuf;
 
     struct MockToolProvider {}
@@ -981,7 +1003,7 @@ mod max_turns_tests {
         }
 
         fn get_model_config(&self) -> ModelConfig {
-            ModelConfig::new("mock-model".to_string())
+            ModelConfig::new("mock-model").unwrap()
         }
 
         fn metadata() -> ProviderMetadata {
@@ -1013,9 +1035,11 @@ mod max_turns_tests {
             max_turns: Some(1),
             retry_config: None,
         };
-        let messages = vec![Message::user().with_text("Hello")];
+        let conversation = Conversation::new(vec![Message::user().with_text("Hello")]).unwrap();
 
-        let reply_stream = agent.reply(&messages, Some(session_config), None).await?;
+        let reply_stream = agent
+            .reply(conversation, Some(session_config), None)
+            .await?;
         tokio::pin!(reply_stream);
 
         let mut responses = Vec::new();
@@ -1037,6 +1061,7 @@ mod max_turns_tests {
                 }
                 Ok(AgentEvent::McpNotification(_)) => {}
                 Ok(AgentEvent::ModelChange { .. }) => {}
+                Ok(AgentEvent::HistoryReplaced(_)) => {}
                 Err(e) => {
                     return Err(e);
                 }

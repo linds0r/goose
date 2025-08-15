@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -6,12 +7,12 @@ use aws_sdk_bedrockruntime::types as bedrock;
 use aws_smithy_types::{Document, Number};
 use base64::Engine;
 use chrono::Utc;
-use mcp_core::{Tool, ToolCall, ToolError, ToolResult};
-use rmcp::model::{Content, RawContent, ResourceContents, Role};
+use mcp_core::{ToolCall, ToolResult};
+use rmcp::model::{Content, ErrorCode, ErrorData, RawContent, ResourceContents, Role, Tool};
 use serde_json::Value;
 
 use super::super::base::Usage;
-use crate::message::{Message, MessageContent};
+use crate::conversation::message::{Message, MessageContent};
 
 pub fn to_bedrock_message(message: &Message) -> Result<bedrock::Message> {
     bedrock::Message::builder()
@@ -184,9 +185,14 @@ pub fn to_bedrock_tool(tool: &Tool) -> Result<bedrock::Tool> {
     Ok(bedrock::Tool::ToolSpec(
         bedrock::ToolSpecification::builder()
             .name(tool.name.to_string())
-            .description(tool.description.to_string())
+            .description(
+                tool.description
+                    .as_ref()
+                    .map(|d| d.to_string())
+                    .unwrap_or_default(),
+            )
             .input_schema(bedrock::ToolInputSchema::Json(to_bedrock_json(
-                &tool.input_schema,
+                &Value::Object(tool.input_schema.as_ref().clone()),
             )))
             .build()?,
     ))
@@ -281,9 +287,11 @@ pub fn from_bedrock_content_block(block: &bedrock::ContentBlock) -> Result<Messa
         bedrock::ContentBlock::ToolResult(tool_res) => MessageContent::tool_response(
             tool_res.tool_use_id.to_string(),
             if tool_res.content.is_empty() {
-                Err(ToolError::ExecutionError(
-                    "Empty content for tool use from Bedrock".to_string(),
-                ))
+                Err(ErrorData {
+                    code: ErrorCode::INTERNAL_ERROR,
+                    message: Cow::from("Empty content for tool use from Bedrock".to_string()),
+                    data: None,
+                })
             } else {
                 tool_res
                     .content
@@ -302,9 +310,11 @@ pub fn from_bedrock_tool_result_content_block(
     Ok(match content {
         bedrock::ToolResultContentBlock::Text(text) => Content::text(text.to_string()),
         _ => {
-            return Err(ToolError::ExecutionError(
-                "Unsupported tool result from Bedrock".to_string(),
-            ))
+            return Err(ErrorData {
+                code: ErrorCode::INTERNAL_ERROR,
+                message: Cow::from("Unsupported tool result from Bedrock".to_string()),
+                data: None,
+            })
         }
     })
 }

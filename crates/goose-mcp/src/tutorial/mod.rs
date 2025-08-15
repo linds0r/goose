@@ -2,14 +2,16 @@ use anyhow::Result;
 use include_dir::{include_dir, Dir};
 use indoc::formatdoc;
 use mcp_core::{
-    handler::{PromptError, ResourceError, ToolError},
+    handler::{PromptError, ResourceError},
     protocol::ServerCapabilities,
-    tool::{Tool, ToolAnnotations},
 };
 use mcp_server::router::CapabilitiesBuilder;
 use mcp_server::Router;
-use rmcp::model::{Content, JsonRpcMessage, Prompt, Resource, Role};
-use serde_json::{json, Value};
+use rmcp::model::{
+    Content, ErrorCode, ErrorData, JsonRpcMessage, Prompt, Resource, Role, Tool, ToolAnnotations,
+};
+use rmcp::object;
+use serde_json::Value;
 use std::{future::Future, pin::Pin};
 use tokio::sync::mpsc;
 
@@ -31,7 +33,7 @@ impl TutorialRouter {
         let load_tutorial = Tool::new(
             "load_tutorial".to_string(),
             "Load a specific tutorial by name. The tutorial will be returned as markdown content that provides step by step instructions.".to_string(),
-            json!({
+            object!({
                 "type": "object",
                 "required": ["name"],
                 "properties": {
@@ -40,15 +42,14 @@ impl TutorialRouter {
                         "description": "Name of the tutorial to load, e.g. 'getting-started' or 'developer-mcp'"
                     }
                 }
-            }),
-            Some(ToolAnnotations {
-                    title: Some("Load Tutorial".to_string()),
-                    read_only_hint: true,
-                    destructive_hint: false,
-                    idempotent_hint: false,
-                    open_world_hint: false,
-                }),
-        );
+            })
+        ).annotate(ToolAnnotations {
+            title: Some("Load Tutorial".to_string()),
+            read_only_hint: Some(true),
+            destructive_hint: Some(false),
+            idempotent_hint: Some(false),
+            open_world_hint: Some(false),
+        });
 
         // Get base instructions and available tutorials
         let available_tutorials = Self::get_available_tutorials();
@@ -93,14 +94,13 @@ impl TutorialRouter {
         tutorials
     }
 
-    async fn load_tutorial(&self, name: &str) -> Result<String, ToolError> {
+    async fn load_tutorial(&self, name: &str) -> Result<String, ErrorData> {
         let file_name = format!("{}.md", name);
-        let file = TUTORIALS_DIR
-            .get_file(&file_name)
-            .ok_or(ToolError::ExecutionError(format!(
-                "Could not locate tutorial '{}'",
-                name
-            )))?;
+        let file = TUTORIALS_DIR.get_file(&file_name).ok_or(ErrorData::new(
+            ErrorCode::INTERNAL_ERROR,
+            format!("Could not locate tutorial '{}'", name),
+            None,
+        ))?;
         Ok(String::from_utf8_lossy(file.contents()).into_owned())
     }
 }
@@ -127,7 +127,7 @@ impl Router for TutorialRouter {
         tool_name: &str,
         arguments: Value,
         _notifier: mpsc::Sender<JsonRpcMessage>,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<Content>, ToolError>> + Send + 'static>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<Content>, ErrorData>> + Send + 'static>> {
         let this = self.clone();
         let tool_name = tool_name.to_string();
 
@@ -138,7 +138,11 @@ impl Router for TutorialRouter {
                         .get("name")
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| {
-                            ToolError::InvalidParameters("Missing 'name' parameter".to_string())
+                            ErrorData::new(
+                                ErrorCode::INVALID_PARAMS,
+                                "Missing 'name' parameter".to_string(),
+                                None,
+                            )
                         })?;
 
                     let content = this.load_tutorial(name).await?;
@@ -146,7 +150,11 @@ impl Router for TutorialRouter {
                         Content::text(content).with_audience(vec![Role::Assistant])
                     ])
                 }
-                _ => Err(ToolError::NotFound(format!("Tool {} not found", tool_name))),
+                _ => Err(ErrorData::new(
+                    ErrorCode::RESOURCE_NOT_FOUND,
+                    format!("Tool {} not found", tool_name),
+                    None,
+                )),
             }
         })
     }

@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YTD Spend Dashboard - June 2025</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .dashboard {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .card h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        .card .amount {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .flat-fee { color: #4CAF50; }
+        .enforcement { color: #FF9800; }
+        .special-projects { color: #2196F3; }
+        .total { color: #9C27B0; }
+        .charts-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .chart-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .chart-card h3 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        .details-table {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        .positive { color: #4CAF50; }
+        .negative { color: #f44336; }
+        .data-source {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-style: italic;
+        }
+        @media (max-width: 768px) {
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <h1>Year-to-Date Spend Dashboard</h1>
+            <p>Data as of June 2025 | KTS Block Flat Fee Tracking</p>
+        </div>
+
+        <div class="summary-cards">
+            <div class="card">
+                <h3>Flat Fee YTD (Actual)</h3>
+                <div class="amount flat-fee">$362,973</div>
+                <p>Total actual flat fee spend across all units</p>
+            </div>
+            <div class="card">
+                <h3>Enforcement YTD</h3>
+                <div class="amount enforcement">$119,678</div>
+                <p>Total enforcement costs across all units</p>
+            </div>
+            <div class="card">
+                <h3>Special Projects YTD</h3>
+                <div class="amount special-projects">$172,589</div>
+                <p>Total special project costs across all units</p>
+            </div>
+            <div class="card">
+                <h3>Total Actual Spend YTD</h3>
+                <div class="amount total">$629,388</div>
+                <p>Sum of all business units (actual + enforcement + special projects)</p>
+            </div>
+        </div>
+
+        <div class="charts-container">
+            <div class="chart-card">
+                <h3>YTD Spend Breakdown</h3>
+                <canvas id="spendBreakdownChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Monthly Trend</h3>
+                <canvas id="monthlyTrendChart"></canvas>
+            </div>
+        </div>
+
+        <div class="details-table">
+            <h3 style="padding: 20px 20px 0 20px; margin: 0; color: #333;">Detailed Breakdown by Business Unit</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Business Unit</th>
+                        <th>Flat Fee Budget</th>
+                        <th>Actual Spend</th>
+                        <th>Variance</th>
+                        <th>Enforcement</th>
+                        <th>Special Projects</th>
+                        <th>Total YTD</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Afterpay</td>
+                        <td>$50,000</td>
+                        <td>$17,556</td>
+                        <td class="positive">-$32,444</td>
+                        <td>-$4,486</td>
+                        <td>$1,229</td>
+                        <td>$14,299</td>
+                    </tr>
+                    <tr>
+                        <td>Cash App</td>
+                        <td>$150,000</td>
+                        <td>$215,402</td>
+                        <td class="negative">$65,402</td>
+                        <td>$9,248</td>
+                        <td>$3,067</td>
+                        <td>$227,717</td>
+                    </tr>
+                    <tr>
+                        <td>Proto/Bitkey</td>
+                        <td>$150,000</td>
+                        <td>$100,434</td>
+                        <td class="positive">-$49,566</td>
+                        <td>$48,432</td>
+                        <td>$9,000</td>
+                        <td>$157,866</td>
+                    </tr>
+                    <tr>
+                        <td>TBD</td>
+                        <td>$150,000</td>
+                        <td>$69,705</td>
+                        <td class="positive">-$80,295</td>
+                        <td>$2,450</td>
+                        <td>$9,063</td>
+                        <td>$81,218</td>
+                    </tr>
+                    <tr>
+                        <td>Renewals</td>
+                        <td>$25,000</td>
+                        <td>$26,571</td>
+                        <td class="negative">$1,571</td>
+                        <td>$0</td>
+                        <td>$0</td>
+                        <td>$26,571</td>
+                    </tr>
+                    <tr>
+                        <td>Other</td>
+                        <td>$0</td>
+                        <td>$53,910</td>
+                        <td class="negative">$53,910</td>
+                        <td>$3,955</td>
+                        <td>$63,852</td>
+                        <td>$121,717</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="data-source">
+            <p>Data Source: KTS_Block Flat Fee Tracking - YTD June 2025<br>
+            Last Updated: June 2025</p>
+        </div>
+    </div>
+
+    <script>
+        // Spend Breakdown Pie Chart
+        const ctx1 = document.getElementById('spendBreakdownChart').getContext('2d');
+        new Chart(ctx1, {
+            type: 'doughnut',
+            data: {
+                labels: ['Flat Fee Actual', 'Enforcement', 'Special Projects'],
+                datasets: [{
+                    data: [362973, 119678, 172589],
+                    backgroundColor: ['#4CAF50', '#FF9800', '#2196F3'],
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const value = context.parsed;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((value / total) * 100).toFixed(1);
+                                return context.label + ': $' + value.toLocaleString() + ' (' + percentage + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Monthly Trend Chart
+        const ctx2 = document.getElementById('monthlyTrendChart').getContext('2d');
+        new Chart(ctx2, {
+            type: 'line',
+            data: {
+                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                datasets: [
+                    {
+                        label: 'Flat Fee Actual',
+                        data: [72372, 84393, 73320, 64639, 122284, 66572],
+                        borderColor: '#4CAF50',
+                        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Enforcement',
+                        data: [12055, 3044, 17298, 17616, 5619, 3966],
+                        borderColor: '#FF9800',
+                        backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Special Projects',
+                        data: [11892, 19240, 5293, 35363, 8984, 5439],
+                        borderColor: '#2196F3',
+                        backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + value.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': $' + context.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useConfig } from '../components/ConfigContext';
-import { getApiUrl, getSecretKey } from '../config';
+import { getApiUrl } from '../config';
 import { useDictationSettings } from './useDictationSettings';
 import { safeJsonParse } from '../utils/jsonUtils';
 
@@ -85,9 +85,54 @@ export const useWhisper = ({ onTranscription, onError, onSizeWarning }: UseWhisp
     }
   }, [dictationSettings, hasOpenAIKey, hasElevenLabsKey]);
 
+  // Define stopRecording before startRecording to avoid circular dependency
+  const stopRecording = useCallback(() => {
+    setIsRecording(false); // Always update the visual state
+
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+
+    // Clear interval
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+
+    // Stop all tracks in the stream
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+
+    // Close audio context
+    if (audioContext && audioContext.state !== 'closed') {
+      audioContext.close().catch(console.error);
+      setAudioContext(null);
+      setAnalyser(null);
+    }
+  }, [audioContext]);
+
+  // Cleanup effect to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      // Cleanup on unmount
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close().catch(console.error);
+      }
+    };
+  }, [audioContext]);
+
   const transcribeAudio = useCallback(
     async (audioBlob: Blob) => {
       if (!dictationSettings) {
+        stopRecording();
         onError?.(new Error('Dictation settings not loaded'));
         return;
       }
@@ -117,7 +162,7 @@ export const useWhisper = ({ onTranscription, onError, onSizeWarning }: UseWhisp
         let endpoint = '';
         let headers: Record<string, string> = {
           'Content-Type': 'application/json',
-          'X-Secret-Key': getSecretKey(),
+          'X-Secret-Key': await window.electron.getSecretKey(),
         };
         let body: Record<string, string> = {
           audio: base64Audio,
@@ -169,6 +214,7 @@ export const useWhisper = ({ onTranscription, onError, onSizeWarning }: UseWhisp
         }
       } catch (error) {
         console.error('Error transcribing audio:', error);
+        stopRecording();
         onError?.(error as Error);
       } finally {
         setIsTranscribing(false);
@@ -176,38 +222,12 @@ export const useWhisper = ({ onTranscription, onError, onSizeWarning }: UseWhisp
         setEstimatedSize(0);
       }
     },
-    [onTranscription, onError, dictationSettings]
+    [onTranscription, onError, dictationSettings, stopRecording]
   );
-
-  // Define stopRecording before startRecording to avoid circular dependency
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-
-    // Clear interval
-    if (durationIntervalRef.current) {
-      clearInterval(durationIntervalRef.current);
-      durationIntervalRef.current = null;
-    }
-
-    // Stop all tracks in the stream
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-
-    // Close audio context
-    if (audioContext) {
-      audioContext.close();
-      setAudioContext(null);
-      setAnalyser(null);
-    }
-  }, [audioContext]);
 
   const startRecording = useCallback(async () => {
     if (!dictationSettings) {
+      stopRecording();
       onError?.(new Error('Dictation settings not loaded'));
       return;
     }
@@ -285,6 +305,7 @@ export const useWhisper = ({ onTranscription, onError, onSizeWarning }: UseWhisp
       setIsRecording(true);
     } catch (error) {
       console.error('Error starting recording:', error);
+      stopRecording();
       onError?.(error as Error);
     }
   }, [onError, onSizeWarning, transcribeAudio, stopRecording, dictationSettings]);
