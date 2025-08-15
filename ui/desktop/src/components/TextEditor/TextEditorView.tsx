@@ -408,15 +408,22 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
 
   const handleAIBatchResponse = useCallback(
     (aiResponseObject: Message, _reason: string, currentEditorInstance?: Editor | null) => {
-      // Get the response text content
-      const rawTextContent =
-        aiResponseObject?.content?.[0]?.type === 'text' ? aiResponseObject.content[0].text : '';
+      // Debug: Log the entire response object to understand its structure
+      console.log('handleAIBatchResponse - Full response object:', aiResponseObject);
+      console.log('handleAIBatchResponse - Response content:', aiResponseObject?.content);
+      
+      // Get the response text content - concatenate all text chunks from streaming
+      const rawTextContent = aiResponseObject?.content
+        ?.filter(chunk => chunk.type === 'text')
+        ?.map(chunk => chunk.text)
+        ?.join('') || '';
 
       // Check if this is a thread reply response - handle completely separately
       const metadata = aiResponseObject.metadata;
       const isThreadReply = metadata?.requestType === 'thread_reply';
 
       console.log('handleAIBatchResponse - metadata:', metadata);
+      console.log('handleAIBatchResponse - rawTextContent:', rawTextContent);
 
       // Also check if content looks like conversational text (not JSON) as backup detection
       const looksLikeJSON =
@@ -524,41 +531,8 @@ const TextEditorView: React.FC<TextEditorViewProps> = ({ setView }) => {
           if (match && match[1]) {
             cleanedJsonString = match[1].trim();
           } else {
-            // If no fences, look for JSON object in the text
+            // If no fences, the response should be pure JSON
             cleanedJsonString = rawTextContent.trim();
-            
-            // Check if it starts with explanatory text before JSON
-            if (!cleanedJsonString.startsWith('{') && !cleanedJsonString.startsWith('[')) {
-              // Try to find the first JSON object in the text
-              const jsonStartIndex = cleanedJsonString.indexOf('{');
-              if (jsonStartIndex !== -1) {
-                // Extract from the first { to the end, then find the matching }
-                const fromFirstBrace = cleanedJsonString.substring(jsonStartIndex);
-                let braceCount = 0;
-                let jsonEndIndex = -1;
-                
-                for (let i = 0; i < fromFirstBrace.length; i++) {
-                  if (fromFirstBrace[i] === '{') {
-                    braceCount++;
-                  } else if (fromFirstBrace[i] === '}') {
-                    braceCount--;
-                    if (braceCount === 0) {
-                      jsonEndIndex = i + 1;
-                      break;
-                    }
-                  }
-                }
-                
-                if (jsonEndIndex !== -1) {
-                  cleanedJsonString = fromFirstBrace.substring(0, jsonEndIndex);
-                }
-              } else {
-                console.warn(
-                  'Response does not appear to be JSON and was not in ```json fences. Will attempt to parse as is.',
-                  cleanedJsonString
-                );
-              }
-            }
           }
           console.log('Attempting to parse this JSON string:', cleanedJsonString);
           parsedResponse = JSON.parse(cleanedJsonString);
